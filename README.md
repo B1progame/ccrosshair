@@ -1,91 +1,150 @@
-﻿# Crosshair Overlay (Windows, PySide6)
+# Crosshair Overlay
 
-A desktop crosshair overlay app with a multi-page UI, live overlay updates, a creator grid editor, and a plugin-ready crosshair library.
+Crosshair Overlay is a Windows desktop app for showing a customizable crosshair on top of your games and giving you a clean control center for your presets, imports, creator tools, and runtime automation.
 
-## Run
-1. `setup.bat`
-2. `start.bat`
+It is built with `PySide6`, uses Windows-native overlay behavior, and stores your personal crosshair library in `%APPDATA%\CrosshairOverlay`.
 
-Or manually:
-1. `python -m venv .venv`
-2. `.venv\Scripts\python.exe -m pip install -r requirements.txt`
-3. `.venv\Scripts\python.exe main.py`
+**Highlights**
+- Always-on-top crosshair overlay with live style updates
+- Built-in crosshair library with preview, detail editing, favorites, and export
+- Creator page for designing your own grid-based crosshairs
+- Import and export support for `.xhair`, `.xpack`, and legacy `.chgrid` / `.chpack`
+- Game automation with Steam and Epic library detection plus manual `.exe` imports
+- Per-game crosshair profiles and optional fullscreen-only behavior
+- System tray support so the app can stay running in the background
+- Theme controls, accent color customization, and shared global size controls
+- Experimental Beta Zoom page with hotkey-based live zoom preview
 
-## Storage
-Default storage path:
-- `%APPDATA%\CrosshairOverlay\crosshairs`
+**Platform**
+- Windows 10 or Windows 11
 
-Config path:
-- `%APPDATA%\CrosshairOverlay\settings.json`
+**Screens And Core Areas**
+- `Home`: quick enable/disable controls, current crosshair preview, and fast library access
+- `Crosshairs`: browse built-ins, favorites, imports, and saved variants
+- `Creator`: build your own crosshair visually and save it back into the library
+- `Games`: open a game-specific menu, assign a crosshair, and enable auto-apply rules
+- `Settings`: choose theme mode, accent color, storage location, and beta feature visibility
+- `Beta`: experimental zoom overlay page that appears only when enabled in Settings
 
-## Crosshair Formats
-### `.xhair` (plugin-ready single crosshair)
-JSON file with:
-- `format`: `crosshair-overlay-xhair-v1`
-- `style`: serialized overlay shape + parameters
-- `family`, `description`, `tags`
-- `editable_settings`
-- metadata such as `source_type`
+**Quick Start**
+1. Run `setup.bat`
+2. Run `start.bat`
 
-### `.xpack` (plugin-ready bundle)
-JSON file with:
-- `format`: `crosshair-overlay-xpack-v1`
-- `crosshairs`: array of `.xhair` payloads
+That is the easiest source-based workflow for local use.
 
-### Compatibility
-The app also imports legacy formats:
-- `.chpack`
-- `.chgrid`
+**Manual Run**
+1. Create a virtual environment:
 
-## Crosshair Research Process
-Research references and taxonomy are documented in:
+```powershell
+python -m venv .venv
+```
+
+2. Install dependencies:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+3. Launch the app:
+
+```powershell
+.\.venv\Scripts\pythonw.exe main.py
+```
+
+**Build A Normal Windows Installer**
+This repository now includes a full Windows packaging path using `PyInstaller` plus `Inno Setup`.
+
+**What You Need**
+- Python 3.11 or newer available in `PATH`
+- Inno Setup 6 installed locally
+
+**One-Click Build**
+1. Install Inno Setup 6
+2. Run:
+
+```powershell
+build_installer.bat
+```
+
+The build script will:
+- reuse or create the local virtual environment
+- install runtime and build dependencies
+- generate a Windows `.ico` from the app SVG logo
+- build a portable app folder with `PyInstaller`
+- compile an installer with `Inno Setup`
+
+**Build Output**
+
+| Output | Location |
+| --- | --- |
+| Portable app | `dist\CrosshairOverlay\CrosshairOverlay.exe` |
+| Installer | `installer\output\CrosshairOverlay-Setup-<version>.exe` |
+
+**Installer Behavior**
+- installs per-user into `%LOCALAPPDATA%\Programs\Crosshair Overlay`
+- creates Start Menu shortcuts
+- can optionally create a Desktop shortcut
+- adds normal uninstall support
+- can launch the app directly after setup finishes
+
+**First Launch Notes**
+- The app stores settings in `%APPDATA%\CrosshairOverlay\settings.json`
+- The default crosshair library is stored in `%APPDATA%\CrosshairOverlay\crosshairs`
+- Imported packs, custom variants, creator saves, and exports are organized into their own folders automatically
+
+**Game Detection**
+The app can discover games from:
+- Steam libraries
+- Epic Games manifests
+- manual `.exe` imports that you add yourself
+
+You can open any detected game row in the `Games` page and choose:
+- whether the game profile is enabled
+- which crosshair should auto-apply for that game
+- whether you want to jump straight into the library to choose a better preset
+
+**Crosshair Formats**
+The project supports multiple crosshair file formats:
+
+| Format | Purpose |
+| --- | --- |
+| `.xhair` | Single crosshair definition |
+| `.xpack` | Pack of multiple crosshairs |
+| `.chgrid` | Creator/grid format |
+| `.chpack` | Legacy import format |
+
+**Research Files**
+If you want to expand the built-in library, the current research references live in:
 - `docs/crosshair_research.md`
 - `docs/crosshair_reference_catalog.json`
 
-The dataset captures:
-- source link
-- family/type
-- visual features
-- grid vs vector style
-- common parameters
-- app mapping target
+**Project Layout**
 
-## How To Research More Crosshairs
-1. Search by family keywords: `dot`, `ring`, `bracket`, `square`, `scope`, `t-style`, `pixel pvp crosshair`.
-2. Pull from multiple ecosystems:
-   - FPS databases (VALORANT/CS2)
-   - hero shooter reticle pages
-   - Minecraft resource-pack ecosystems
-   - overlay community galleries
-3. Record each finding in `docs/crosshair_reference_catalog.json` with consistent fields.
-4. Classify by geometry first (family), not by game title.
+| Path | Purpose |
+| --- | --- |
+| `main.py` | App entry point |
+| `src/crosshair_overlay/app.py` | Main controller and runtime logic |
+| `src/crosshair_overlay/ui/` | Main window, pages, sidebar, and shared UI components |
+| `src/crosshair_overlay/crosshairs/` | Built-in presets, library management, and import/export logic |
+| `src/crosshair_overlay/assets/` | App branding assets |
+| `installer/` | Inno Setup files and Windows packaging helpers |
 
-## How To Add More Built-in Crosshairs
-1. Open `src/crosshair_overlay/crosshairs/catalog.py`.
-2. Add a preset via `_make(...)` with:
-   - `style_id`, `display_name`, `family`
-   - renderer shape
-   - default style params
-   - `editable_settings`
-3. Reuse existing families whenever possible; only create a new renderer family if geometry is truly new.
+**Developer Workflow**
+- `setup.bat` prepares the local virtual environment and runtime dependencies
+- `start.bat` launches the app with `pythonw`
+- `build_installer.bat` creates a distributable Windows installer
 
-## How To Add A New Renderer Family
-1. Add a new `OverlayShape` entry in `src/crosshair_overlay/config.py`.
-2. Implement draw logic in `src/crosshair_overlay/overlay_renderer.py`.
-3. Add presets in `catalog.py` and choose supported settings metadata.
+**Troubleshooting**
+- If the overlay does not appear above a game, try borderless fullscreen instead of exclusive fullscreen.
+- Some protected or anti-cheat-heavy titles may limit screen capture or overlay behavior.
+- If a game is missing from the library, use the manual import option on the `Games` page and point it at the main `.exe`.
+- If the Beta page is missing, enable `Show Beta Features in Sidebar` in `Settings`.
+- If the installer build fails, make sure Inno Setup 6 is installed and available in one of its default Windows locations.
 
-## How To Add Plugin Packs
-### Single crosshair plugin
-- Drop `.xhair` into the storage folder.
+**For Contributors**
+- Keep crosshair additions geometry-focused so similar presets stay grouped together.
+- Reuse existing renderer families when a preset is only a style variation.
+- Treat the Beta Zoom tools as experimental and expect iteration there.
 
-### Bundle plugin
-- Drop `.xpack` into the storage folder.
-- Each entry is loaded into the crosshair library.
-
-## Detail Editing Flow
-- Open `Crosshairs` page.
-- Select a crosshair.
-- Click `Open Detail`.
-- Edit supported controls (only those declared for that preset).
-- Overlay updates live.
-- Save as variant or export `.xhair`.
+**License**
+A repository-level custom license is included in [LICENSE](/C:/Users/bslid.BENJI-PC/OneDrive/Dokumente/.CODES/verkaufen/flo/crosshair/v1/LICENSE). The installer uses the same license text so the GitHub project and Windows installer stay aligned.

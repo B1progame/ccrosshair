@@ -9,6 +9,8 @@ from PySide6.QtWidgets import QFrame, QHBoxLayout, QStackedWidget, QVBoxLayout, 
 
 from ..crosshairs.models import CrosshairDefinition
 from ..creator.models import CreatorCrosshair
+from ..app_settings import BetaZoomSettings
+from .pages.beta_page import BetaPage
 from .pages.creator_page import CreatorPage
 from .pages.crosshair_detail_page import CrosshairDetailPage
 from .pages.crosshairs_page import CrosshairsPage
@@ -35,6 +37,7 @@ class MainWindow(QWidget):
     accent_color_changed = Signal(str)
     global_size_changed = Signal(int)
     storage_path_changed = Signal(str)
+    beta_features_changed = Signal(bool)
     reset_requested = Signal()
     check_updates_requested = Signal()
     import_pack_requested = Signal(str)
@@ -49,6 +52,7 @@ class MainWindow(QWidget):
     game_profile_updated = Signal(str, str, bool)
     import_game_requested = Signal(str)
     rescan_games_requested = Signal()
+    beta_zoom_settings_changed = Signal(object)
     close_to_tray_requested = Signal()
 
     EXPANDED_WIDTH = 218
@@ -63,6 +67,8 @@ class MainWindow(QWidget):
         accent_color: str,
         global_size_percent: int,
         storage_path: str,
+        beta_features_enabled: bool,
+        beta_zoom_settings: BetaZoomSettings,
         sidebar_collapsed: bool,
     ) -> None:
         super().__init__()
@@ -76,11 +82,13 @@ class MainWindow(QWidget):
         self._detail_page = CrosshairDetailPage()
         self._creator_page = CreatorPage()
         self._games_page = GamesPage()
+        self._beta_page = BetaPage()
         self._settings_page = SettingsPage(
             theme_mode=theme_mode,
             accent_color=accent_color,
             global_size_percent=global_size_percent,
             storage_path=storage_path,
+            beta_features_enabled=beta_features_enabled,
         )
         self._sidebar = Sidebar()
         self._stack = QStackedWidget(self)
@@ -93,6 +101,8 @@ class MainWindow(QWidget):
         self._build_ui()
         self._wire_signals()
         self._apply_sidebar_state(sidebar_collapsed, animate=False)
+        self.set_beta_page_visible(beta_features_enabled)
+        self.set_beta_zoom_settings(beta_zoom_settings)
         self.navigate_to("home")
 
     def _build_ui(self) -> None:
@@ -135,6 +145,7 @@ class MainWindow(QWidget):
             "crosshair_detail": self._detail_page,
             "creator": self._creator_page,
             "games": self._games_page,
+            "beta": self._beta_page,
             "settings": self._settings_page,
         }
         for page in self._page_map.values():
@@ -173,11 +184,13 @@ class MainWindow(QWidget):
         self._games_page.import_game_requested.connect(self.import_game_requested.emit)
         self._games_page.rescan_requested.connect(self.rescan_games_requested.emit)
         self._games_page.open_crosshair_library_requested.connect(lambda: self.navigate_to("crosshairs"))
+        self._beta_page.settings_changed.connect(self.beta_zoom_settings_changed.emit)
 
         self._settings_page.theme_mode_changed.connect(self.theme_mode_changed.emit)
         self._settings_page.accent_color_changed.connect(self.accent_color_changed.emit)
         self._settings_page.global_size_changed.connect(self.global_size_changed.emit)
         self._settings_page.storage_path_changed.connect(self.storage_path_changed.emit)
+        self._settings_page.beta_features_changed.connect(self.beta_features_changed.emit)
         self._settings_page.reset_requested.connect(self.reset_requested.emit)
         self._settings_page.check_updates_requested.connect(self.check_updates_requested.emit)
 
@@ -267,6 +280,25 @@ class MainWindow(QWidget):
 
     def set_games_status(self, text: str) -> None:
         self._games_page.set_runtime_status(text)
+
+    def set_beta_page_visible(self, visible: bool) -> None:
+        self._settings_page.set_beta_features_enabled(visible)
+        self._sidebar.set_beta_visible(visible)
+        if not visible and self._current_page_id == "beta":
+            self.navigate_to("home")
+
+    def set_beta_zoom_settings(self, settings: BetaZoomSettings) -> None:
+        self._beta_page.set_settings(settings)
+
+    def set_beta_monitor_choices(self, choices: list[tuple[str, str]]) -> None:
+        self._beta_page.set_monitor_choices(choices)
+
+    def set_beta_preview(self, pixmap) -> None:
+        self._beta_page.set_preview_pixmap(pixmap)
+
+    @property
+    def current_page_id(self) -> str:
+        return self._current_page_id
 
     def closeEvent(self, event) -> None:  # noqa: N802
         if self._allow_close_once:

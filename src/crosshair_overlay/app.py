@@ -9,11 +9,12 @@ import ctypes
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QTimer
-from PySide6.QtGui import QAction, QIcon
-from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QSystemTrayIcon
+from PySide6.QtCore import QObject, QPoint, QRect, QSize, Qt, QTimer
+from PySide6.QtGui import QAction, QIcon, QPixmap
+from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QProgressDialog, QSystemTrayIcon
 
-from .app_settings import AppSettings, GameProfile, ThemeMode
+from .app_metadata import APP_VERSION
+from .app_settings import AppSettings, BetaZoomSettings, GameProfile, ThemeMode
 from .config import OverlayStyle
 from .config_manager import ConfigManager
 from .creator.conversion import creator_to_overlay_style, overlay_style_to_creator
@@ -30,12 +31,20 @@ from .crosshairs import (
     style_with_updates,
 )
 from .crosshairs.io import XHAIR_EXTENSION, XPACK_EXTENSION
+from .hotkey_utils import is_hotkey_pressed, parse_hotkey
 from .overlay_window import OverlayWindow
+from .zoom_overlay_window import ZoomOverlayWindow
 from .storage_paths import StoragePaths
 from .style_registry import load_style_pack, save_style_pack
 from .theme_manager import ThemeManager
+from .update_manager import ReleaseInfo, UpdateError, UpdateManager
 from .game_services import DiscoveredGame, scan_game_libraries
-from .windows_runtime import foreground_monitor_bounds, is_foreground_fullscreen, running_process_names
+from .windows_runtime import (
+    foreground_monitor_bounds,
+    foreground_window_bounds,
+    is_foreground_fullscreen,
+    running_process_names,
+)
 from .ui.main_window import MainWindow
 from .ui.pages.games_page import GameRowModel
 
@@ -51,6 +60,7 @@ class AppController(QObject):
         self._storage_paths = StoragePaths(Path(self._settings.crosshair_storage_path))
         self._storage_paths.ensure()
         self._theme_manager = ThemeManager(app=self._app)
+        self._update_manager = UpdateManager()
 
         self._library = CrosshairLibrary()
         self._definitions = self._library.load(self._storage_paths.root)
@@ -58,6 +68,7 @@ class AppController(QObject):
 
         self._current_style_id = self._validated_style_id(self._settings.selected_style_id)
         self._overlay = OverlayWindow(style=self._effective_style())
+        self._zoom_overlay = ZoomOverlayWindow()
         self._main_window = MainWindow(
             definitions=self._definitions,
             current_style_id=self._current_style_id,
@@ -66,6 +77,8 @@ class AppController(QObject):
             accent_color=self._settings.accent_color,
             global_size_percent=self._settings.global_size_percent,
             storage_path=self._settings.crosshair_storage_path,
+            beta_features_enabled=self._settings.beta_zoom.sidebar_enabled,
+            beta_zoom_settings=self._settings.beta_zoom,
             sidebar_collapsed=self._settings.sidebar_collapsed,
         )
         self._overlay_visible = bool(self._settings.overlay_enabled)
@@ -74,10 +87,18 @@ class AppController(QObject):
         self._auto_applied_style_id: str | None = None
         self._active_game_profile_id: str | None = None
         self._last_fullscreen_state = False
+        self._last_game_monitor_bounds: tuple[int, int, int, int] | None = None
+        self._last_game_window_bounds: tuple[int, int, int, int] | None = None
         self._discovered_games: list[DiscoveredGame] = []
         self._automation_timer = QTimer(self)
         self._automation_timer.setInterval(1100)
         self._automation_timer.timeout.connect(self._automation_tick)
+        self._zoom_timer = QTimer(self)
+        self._zoom_timer.setTimerType(Qt.TimerType.PreciseTimer)
+        self._zoom_timer.setInterval(8)
+        self._zoom_timer.timeout.connect(self._zoom_tick)
+        self._zoom_hotkey = parse_hotkey(self._settings.beta_zoom.hotkey_sequence)
+        self._zoom_showing = False
         self._tray_icon: QSystemTrayIcon | None = None
         self._tray_menu: QMenu | None = None
         self._is_quitting = False
@@ -85,6 +106,10 @@ class AppController(QObject):
         self._apply_theme()
         self._reload_games()
         self._setup_tray()
+        if hasattr(self._app, "screenAdded"):
+            self._app.screenAdded.connect(lambda _screen: self._refresh_beta_monitor_choices())
+        if hasattr(self._app, "screenRemoved"):
+            self._app.screenRemoved.connect(lambda _screen: self._refresh_beta_monitor_choices())
 
     def _wire_signals(self) -> None:
         self._main_window.enable_overlay_requested.connect(self.show_overlay)
@@ -102,7 +127,7 @@ class AppController(QObject):
         self._main_window.global_size_changed.connect(self.set_global_size)
         self._main_window.storage_path_changed.connect(self.set_storage_path)
         self._main_window.reset_requested.connect(self.reset_settings)
-        self._main_window.check_updates_requested.connect(self.show_updates_placeholder)
+        self._main_window.check_updates_requested.connect(self.check_for_updates)
         self._main_window.import_pack_requested.connect(self.import_pack)
         self._main_window.export_pack_requested.connect(self.export_current_style)
         self._main_window.export_selection_requested.connect(self.export_selected_pack)
@@ -115,6 +140,8 @@ class AppController(QObject):
         self._main_window.game_profile_updated.connect(self.update_game_profile)
         self._main_window.import_game_requested.connect(self.import_manual_game)
         self._main_window.rescan_games_requested.connect(self.rescan_games)
+        self._main_window.beta_features_changed.connect(self.set_beta_features_enabled)
+        self._main_window.beta_zoom_settings_changed.connect(self.set_beta_zoom_settings)
         self._main_window.close_to_tray_requested.connect(self.hide_main_window_to_tray)
 
     def start(self) -> None:
@@ -134,10 +161,15 @@ class AppController(QObject):
         self._main_window.set_selected_size(self._settings.selected_size_percent)
         self._main_window.set_global_size(self._settings.global_size_percent)
         self._main_window.set_storage_path(self._settings.crosshair_storage_path)
+        self._main_window.set_beta_page_visible(self._settings.beta_zoom.sidebar_enabled)
+        self._main_window.set_beta_zoom_settings(self._settings.beta_zoom)
+        self._refresh_beta_monitor_choices()
         self._refresh_games_page()
         self._main_window.navigate_to("home")
         self._automation_timer.start()
+        self._zoom_timer.start()
         self._automation_tick()
+        self._zoom_tick()
         if self._tray_icon is not None:
             self._tray_icon.show()
 
@@ -321,6 +353,25 @@ class AppController(QObject):
         self._settings.sidebar_collapsed = collapsed
         self._save_settings()
 
+    def set_beta_features_enabled(self, enabled: bool) -> None:
+        self._settings.beta_zoom.sidebar_enabled = bool(enabled)
+        self._main_window.set_beta_page_visible(self._settings.beta_zoom.sidebar_enabled)
+        self._refresh_beta_monitor_choices()
+        if not self._settings.beta_zoom.sidebar_enabled:
+            self._hide_zoom_overlay()
+        self._save_settings()
+
+    def set_beta_zoom_settings(self, settings: object) -> None:
+        if not isinstance(settings, BetaZoomSettings):
+            return
+        normalized = self._normalized_beta_zoom_settings(settings)
+        self._settings.beta_zoom = normalized
+        self._zoom_hotkey = parse_hotkey(normalized.hotkey_sequence)
+        self._main_window.set_beta_zoom_settings(normalized)
+        if not normalized.zoom_enabled and not normalized.live_enabled:
+            self._hide_zoom_overlay()
+        self._save_settings()
+
     def import_pack(self, pack_path: str) -> None:
         try:
             source = Path(pack_path)
@@ -427,7 +478,12 @@ class AppController(QObject):
         self._manual_style_id = self._current_style_id
         self._auto_applied_style_id = None
         self._active_game_profile_id = None
+        self._zoom_hotkey = parse_hotkey(self._settings.beta_zoom.hotkey_sequence)
+        self._zoom_showing = False
+        self._last_game_monitor_bounds = None
+        self._last_game_window_bounds = None
         self._overlay.set_style(self._effective_style())
+        self._hide_zoom_overlay()
         self._main_window.refresh_definitions(self._definitions, selected_style_id=self._current_style_id)
         self._main_window.set_selected_style(self._current_style_id)
         self._main_window.set_selected_style_name(self._definitions[self._current_style_id].display_name)
@@ -435,6 +491,9 @@ class AppController(QObject):
         self._main_window.set_selected_size(self._settings.selected_size_percent)
         self._main_window.set_global_size(self._settings.global_size_percent)
         self._main_window.set_theme_values(self._settings.theme_mode, self._settings.accent_color)
+        self._main_window.set_beta_page_visible(self._settings.beta_zoom.sidebar_enabled)
+        self._main_window.set_beta_zoom_settings(self._settings.beta_zoom)
+        self._refresh_beta_monitor_choices()
         self._apply_theme()
         if self._settings.overlay_enabled:
             self._overlay.show()
@@ -450,12 +509,120 @@ class AppController(QObject):
         self._refresh_games_page()
         self._save_settings()
 
-    def show_updates_placeholder(self) -> None:
+    def check_for_updates(self, silent_if_latest: bool = False, silent_on_error: bool = False) -> None:
+        progress = self._indefinite_progress_dialog("Checking GitHub releases...")
+        try:
+            release = self._update_manager.fetch_latest_release()
+        except UpdateError as exc:
+            if not silent_on_error:
+                QMessageBox.warning(self._main_window, "Updates", str(exc))
+            return
+        finally:
+            progress.close()
+
+        if not self._update_manager.is_newer_than_current(release):
+            if not silent_if_latest:
+                QMessageBox.information(
+                    self._main_window,
+                    "Updates",
+                    f"You're up to date.\nCurrent version: {APP_VERSION}",
+                )
+            return
+
+        if release.installer_asset is None:
+            QMessageBox.warning(
+                self._main_window,
+                "Updates",
+                "A newer GitHub release was found, but it does not contain a Windows installer asset yet.",
+            )
+            return
+
+        if not self._update_manager.can_self_update():
+            QMessageBox.information(
+                self._main_window,
+                "Update Available",
+                (
+                    f"Version {release.version} is available on GitHub.\n\n"
+                    "Automatic in-place updates work from the installed app build.\n"
+                    f"Release page:\n{release.html_url}"
+                ),
+            )
+            return
+
+        if not self._confirm_update_install(release):
+            return
+        self._download_and_install_update(release)
+
+    def _confirm_update_install(self, release: ReleaseInfo) -> bool:
+        published = release.published_at or "unknown date"
+        answer = QMessageBox.question(
+            self._main_window,
+            "Install Update",
+            (
+                f"A new version is available.\n\n"
+                f"Current version: {APP_VERSION}\n"
+                f"Latest version: {release.version}\n"
+                f"Published: {published}\n\n"
+                "The installer will be downloaded, this app will close, the update will install silently, "
+                "and then the app will relaunch automatically.\n\n"
+                "Continue?"
+            ),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
+        return answer == QMessageBox.StandardButton.Yes
+
+    def _download_and_install_update(self, release: ReleaseInfo) -> None:
+        progress = QProgressDialog("Downloading update...", None, 0, 0, self._main_window)
+        progress.setWindowTitle("Updating")
+        progress.setAutoClose(False)
+        progress.setAutoReset(False)
+        progress.setMinimumDuration(0)
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.setCancelButton(None)
+        progress.show()
+        QApplication.processEvents()
+
+        try:
+            installer_path = self._update_manager.download_installer(
+                release,
+                progress_callback=lambda done, total: self._update_progress(progress, done, total),
+            )
+            self._update_manager.schedule_silent_update(installer_path)
+        except UpdateError as exc:
+            progress.close()
+            QMessageBox.warning(self._main_window, "Update Failed", str(exc))
+            return
+
+        progress.close()
         QMessageBox.information(
             self._main_window,
-            "Updates",
-            "Automatic update downloads will be integrated in a later phase.",
+            "Installing Update",
+            "The update was downloaded. Crosshair Overlay will now close, install the new version, and relaunch.",
         )
+        self.quit_application()
+
+    def _update_progress(self, dialog: QProgressDialog, downloaded: int, total: int) -> None:
+        if total > 0:
+            dialog.setRange(0, total)
+            dialog.setValue(min(downloaded, total))
+            dialog.setLabelText(f"Downloading update... {downloaded // 1024} KB / {max(1, total // 1024)} KB")
+        else:
+            dialog.setRange(0, 0)
+            dialog.setLabelText("Downloading update...")
+        QApplication.processEvents()
+
+    def _indefinite_progress_dialog(self, label: str) -> QProgressDialog:
+        dialog = QProgressDialog(label, None, 0, 0, self._main_window)
+        dialog.setWindowTitle("Updates")
+        dialog.setAutoClose(False)
+        dialog.setAutoReset(False)
+        dialog.setMinimumDuration(0)
+        dialog.setWindowModality(Qt.WindowModality.WindowModal)
+        dialog.setCancelButton(None)
+        dialog.show()
+        QApplication.processEvents()
+        return dialog
 
     def save_creator_crosshair(self, model: object, activate_now: bool) -> None:
         if not isinstance(model, CreatorCrosshair):
@@ -647,6 +814,21 @@ class AppController(QObject):
         )
         self._main_window.set_games_status(self._current_runtime_status())
 
+    def _refresh_beta_monitor_choices(self) -> None:
+        self._main_window.set_beta_monitor_choices(self._monitor_choices())
+
+    def _monitor_choices(self) -> list[tuple[str, str]]:
+        choices = [("same_as_game", "Same as Game Monitor")]
+        screens = self._app.screens()
+        primary = self._app.primaryScreen()
+        for index, screen in enumerate(screens):
+            geometry = screen.geometry()
+            name = screen.name().strip() or f"Monitor {index + 1}"
+            prefix = "Primary" if screen == primary else f"Monitor {index + 1}"
+            label = f"{prefix} - {name} ({geometry.width()}x{geometry.height()})"
+            choices.append((f"screen:{index}", label))
+        return choices
+
     def _automation_tick(self) -> None:
         running_names: set[str] = set()
         try:
@@ -666,8 +848,17 @@ class AppController(QObject):
             monitor_bounds = foreground_monitor_bounds()
         except Exception:
             monitor_bounds = None
+        window_bounds: tuple[int, int, int, int] | None = None
+        try:
+            window_bounds = foreground_window_bounds()
+        except Exception:
+            window_bounds = None
 
         active_profile = self._resolve_active_game_profile(running_names)
+        if monitor_bounds is not None and fullscreen:
+            self._last_game_monitor_bounds = monitor_bounds
+        if window_bounds is not None and fullscreen:
+            self._last_game_window_bounds = window_bounds
 
         should_show_overlay = self._manual_overlay_enabled
         if self._settings.auto_enable_on_fullscreen:
@@ -694,6 +885,222 @@ class AppController(QObject):
             self._active_game_profile_id = None
 
         self._main_window.set_games_status(self._current_runtime_status())
+
+    def _zoom_tick(self) -> None:
+        show_preview = (
+            self._settings.beta_zoom.sidebar_enabled
+            and self._main_window.isVisible()
+            and self._main_window.current_page_id == "beta"
+        )
+        live_zoom_enabled = self._settings.beta_zoom.sidebar_enabled and self._settings.beta_zoom.live_enabled
+        allow_zoom = self._settings.beta_zoom.sidebar_enabled and self._settings.beta_zoom.zoom_enabled
+        hotkey_down = allow_zoom and is_hotkey_pressed(self._zoom_hotkey)
+        if not show_preview and not live_zoom_enabled and not hotkey_down:
+            self._hide_zoom_overlay()
+            return
+
+        source_frame = self._current_zoom_source_frame()
+        source_screen = self._screen_for_frame(source_frame)
+        if source_screen is None:
+            if show_preview:
+                self._main_window.set_beta_preview(None)
+            self._hide_zoom_overlay()
+            return
+
+        target_screen = self._target_zoom_screen(source_screen, source_frame)
+        if target_screen is None:
+            if show_preview:
+                self._main_window.set_beta_preview(None)
+            self._hide_zoom_overlay()
+            return
+
+        capture_point = self._current_zoom_capture_point(source_screen, source_frame)
+        target_rect = self._zoom_target_rect(target_screen, capture_point)
+        if target_rect is None:
+            if show_preview:
+                self._main_window.set_beta_preview(None)
+            self._hide_zoom_overlay()
+            return
+
+        avoid_zoom_feedback = target_screen == source_screen
+        pixmap = self._capture_zoom_pixmap(
+            source_screen,
+            source_frame,
+            capture_point,
+            target_rect.size(),
+            avoid_zoom_feedback=avoid_zoom_feedback,
+        )
+        if show_preview:
+            self._main_window.set_beta_preview(pixmap)
+
+        if pixmap is None or pixmap.isNull():
+            self._hide_zoom_overlay()
+            return
+
+        if not live_zoom_enabled and not hotkey_down:
+            self._hide_zoom_overlay()
+            return
+
+        animate = bool(self._settings.beta_zoom.animation_enabled and not self._zoom_showing)
+        self._zoom_overlay.show_zoom(
+            pixmap=pixmap,
+            target_rect=target_rect,
+            animate=animate,
+            duration_ms=self._settings.beta_zoom.animation_duration_ms,
+        )
+        self._zoom_showing = True
+
+    def _current_zoom_source_frame(self) -> tuple[int, int, int, int] | None:
+        live_window_bounds: tuple[int, int, int, int] | None = None
+        try:
+            live_window_bounds = foreground_window_bounds()
+        except Exception:
+            live_window_bounds = None
+
+        if self._last_fullscreen_state and live_window_bounds is not None:
+            return live_window_bounds
+        if self._last_game_window_bounds is not None:
+            return self._last_game_window_bounds
+
+        live_monitor_bounds: tuple[int, int, int, int] | None = None
+        try:
+            live_monitor_bounds = foreground_monitor_bounds()
+        except Exception:
+            live_monitor_bounds = None
+
+        if self._last_fullscreen_state and live_monitor_bounds is not None:
+            return live_monitor_bounds
+        if self._last_game_monitor_bounds is not None:
+            return self._last_game_monitor_bounds
+        if live_monitor_bounds is not None:
+            return live_monitor_bounds
+
+        primary = self._app.primaryScreen()
+        if primary is None:
+            return None
+        geometry = primary.geometry()
+        return (geometry.x(), geometry.y(), geometry.x() + geometry.width(), geometry.y() + geometry.height())
+
+    def _screen_for_frame(self, frame: tuple[int, int, int, int] | None):
+        if frame is None:
+            return None
+        center_x = frame[0] + max(1, frame[2] - frame[0]) // 2
+        center_y = frame[1] + max(1, frame[3] - frame[1]) // 2
+        point = QPoint(center_x, center_y)
+        for screen in self._app.screens():
+            if screen.geometry().contains(point):
+                return screen
+        return self._app.primaryScreen()
+
+    def _target_zoom_screen(self, source_screen, source_frame: tuple[int, int, int, int] | None):
+        if self._settings.beta_zoom.display_mode == "crosshair":
+            if source_screen is not None:
+                return source_screen
+            return self._screen_for_frame(source_frame)
+        monitor_id = self._settings.beta_zoom.target_monitor_id
+        if monitor_id != "same_as_game" and monitor_id.startswith("screen:"):
+            try:
+                index = int(monitor_id.split(":", 1)[1])
+            except ValueError:
+                index = -1
+            screens = self._app.screens()
+            if 0 <= index < len(screens):
+                return screens[index]
+        if source_screen is not None:
+            return source_screen
+        return self._screen_for_frame(source_frame)
+
+    def _current_zoom_capture_point(self, source_screen, source_frame: tuple[int, int, int, int] | None) -> QPoint | None:
+        if source_screen is None:
+            return None
+
+        screen_geometry = source_screen.geometry()
+        if source_frame is None:
+            frame_rect = screen_geometry
+        else:
+            frame_rect = QRect(
+                source_frame[0],
+                source_frame[1],
+                max(1, source_frame[2] - source_frame[0]),
+                max(1, source_frame[3] - source_frame[1]),
+            ).intersected(screen_geometry)
+            if frame_rect.isEmpty():
+                frame_rect = screen_geometry
+
+        crosshair_point = self._overlay.crosshair_center()
+        if frame_rect.contains(crosshair_point):
+            return crosshair_point
+        if screen_geometry.contains(crosshair_point):
+            clamped_x = max(frame_rect.left(), min(crosshair_point.x(), frame_rect.right()))
+            clamped_y = max(frame_rect.top(), min(crosshair_point.y(), frame_rect.bottom()))
+            return QPoint(clamped_x, clamped_y)
+        return frame_rect.center()
+
+    def _zoom_target_rect(self, target_screen, capture_point: QPoint | None) -> QRect | None:
+        if target_screen is None:
+            return None
+        geometry = target_screen.geometry()
+        min_edge = max(220, min(geometry.width(), geometry.height()))
+        if self._settings.beta_zoom.display_mode == "crosshair":
+            side = max(180, min(380, int(round(min_edge * 0.24))))
+        else:
+            side = max(260, min(720, int(round(min_edge * 0.34))))
+        side = min(side, geometry.width(), geometry.height())
+        if self._settings.beta_zoom.display_mode == "crosshair":
+            anchor = capture_point or geometry.center()
+            x = anchor.x() - (side // 2)
+            y = anchor.y() - (side // 2)
+            x = max(geometry.left(), min(x, geometry.right() - side + 1))
+            y = max(geometry.top(), min(y, geometry.bottom() - side + 1))
+            return QRect(x, y, side, side)
+        available_width = max(0, geometry.width() - side)
+        available_height = max(0, geometry.height() - side)
+        x = geometry.x() + int(round((available_width * self._settings.beta_zoom.position_x_percent) / 100))
+        y = geometry.y() + int(round((available_height * self._settings.beta_zoom.position_y_percent) / 100))
+        return QRect(x, y, side, side)
+
+    def _capture_zoom_pixmap(
+        self,
+        source_screen,
+        source_frame: tuple[int, int, int, int] | None,
+        capture_point: QPoint | None,
+        output_size: QSize,
+        avoid_zoom_feedback: bool = False,
+    ) -> QPixmap | None:
+        if source_screen is None or source_frame is None:
+            return None
+
+        screen_geometry = source_screen.geometry()
+        frame_rect = QRect(
+            source_frame[0],
+            source_frame[1],
+            max(1, source_frame[2] - source_frame[0]),
+            max(1, source_frame[3] - source_frame[1]),
+        ).intersected(screen_geometry)
+        if frame_rect.isEmpty():
+            frame_rect = screen_geometry
+
+        side = max(120, min(output_size.width(), output_size.height()))
+        zoom_factor = max(2.0, self._settings.beta_zoom.zoom_percent / 100.0)
+        capture_side = max(18, int(round(side / zoom_factor)))
+        capture_side = min(capture_side, frame_rect.width(), frame_rect.height())
+        if capture_side <= 0:
+            return None
+
+        anchor = capture_point or frame_rect.center()
+        capture_x = anchor.x() - (capture_side // 2)
+        capture_y = anchor.y() - (capture_side // 2)
+        capture_x = max(frame_rect.left(), min(capture_x, frame_rect.right() - capture_side + 1))
+        capture_y = max(frame_rect.top(), min(capture_y, frame_rect.bottom() - capture_side + 1))
+
+        local_x = capture_x - screen_geometry.x()
+        local_y = capture_y - screen_geometry.y()
+        return source_screen.grabWindow(0, local_x, local_y, capture_side, capture_side)
+
+    def _hide_zoom_overlay(self) -> None:
+        if self._zoom_showing:
+            self._zoom_overlay.hide_zoom()
+        self._zoom_showing = False
 
     def _resolve_active_game_profile(self, running_names: set[str]) -> GameProfile | None:
         if not running_names:
@@ -766,8 +1173,11 @@ class AppController(QObject):
             return
         self._is_quitting = True
         self._automation_timer.stop()
+        self._zoom_timer.stop()
         if self._tray_icon is not None:
             self._tray_icon.hide()
+        self._hide_zoom_overlay()
+        self._zoom_overlay.close()
         self._overlay.close()
         self._main_window.allow_close_once()
         self._main_window.close()
@@ -784,6 +1194,7 @@ class AppController(QObject):
     def _apply_theme(self) -> None:
         self._theme_manager.apply(theme_mode=self._settings.theme_mode, accent_hex=self._settings.accent_color)
         self._main_window.set_theme_values(self._settings.theme_mode, self._settings.accent_color)
+        self._main_window.set_beta_page_visible(self._settings.beta_zoom.sidebar_enabled)
 
     def _save_settings(self) -> None:
         self._config.save(self._settings)
@@ -798,6 +1209,26 @@ class AppController(QObject):
         normalized = re.sub(r"[^a-zA-Z0-9_\-\s]", "", value).strip().lower()
         normalized = re.sub(r"[\s\-]+", "_", normalized)
         return normalized or "custom_crosshair"
+
+    def _normalized_beta_zoom_settings(self, settings: BetaZoomSettings) -> BetaZoomSettings:
+        sequence = settings.hotkey_sequence.strip()
+        display_mode = settings.display_mode.strip().lower()
+        if display_mode not in {"crosshair", "monitor"}:
+            display_mode = "monitor"
+        monitor_id = settings.target_monitor_id.strip() or "same_as_game"
+        return BetaZoomSettings(
+            sidebar_enabled=self._settings.beta_zoom.sidebar_enabled,
+            live_enabled=bool(settings.live_enabled),
+            zoom_enabled=bool(settings.zoom_enabled),
+            hotkey_sequence=sequence,
+            display_mode=display_mode,
+            target_monitor_id=monitor_id,
+            position_x_percent=max(0, min(100, int(settings.position_x_percent))),
+            position_y_percent=max(0, min(100, int(settings.position_y_percent))),
+            zoom_percent=max(200, min(10000, int(settings.zoom_percent))),
+            animation_enabled=bool(settings.animation_enabled),
+            animation_duration_ms=max(0, min(5000, int(settings.animation_duration_ms))),
+        )
 
 
 def run() -> int:

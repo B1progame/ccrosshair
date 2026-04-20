@@ -23,6 +23,21 @@ class GameProfile:
 
 
 @dataclass
+class BetaZoomSettings:
+    sidebar_enabled: bool = False
+    live_enabled: bool = False
+    zoom_enabled: bool = False
+    hotkey_sequence: str = "CTRL+ALT+Z"
+    display_mode: str = "monitor"
+    target_monitor_id: str = "same_as_game"
+    position_x_percent: int = 50
+    position_y_percent: int = 50
+    zoom_percent: int = 200
+    animation_enabled: bool = False
+    animation_duration_ms: int = 180
+
+
+@dataclass
 class AppSettings:
     theme_mode: str = ThemeMode.SYSTEM.value
     accent_color: str = "#4A90E2"
@@ -36,6 +51,7 @@ class AppSettings:
     auto_enable_on_fullscreen: bool = False
     auto_switch_game_profiles: bool = True
     game_profiles: list[GameProfile] = field(default_factory=list)
+    beta_zoom: BetaZoomSettings = field(default_factory=BetaZoomSettings)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -77,5 +93,28 @@ class AppSettings:
                     )
                 )
         safe["game_profiles"] = profiles
+
+        raw_beta = safe.get("beta_zoom", {})
+        if not isinstance(raw_beta, dict):
+            raw_beta = {}
+        hotkey_sequence = "CTRL+ALT+Z"
+        if "hotkey_sequence" in raw_beta:
+            hotkey_sequence = str(raw_beta.get("hotkey_sequence", "")).strip()
+        display_mode = str(raw_beta.get("display_mode", "monitor")).strip().lower() or "monitor"
+        if display_mode not in {"crosshair", "monitor"}:
+            display_mode = "monitor"
+        safe["beta_zoom"] = BetaZoomSettings(
+            sidebar_enabled=bool(raw_beta.get("sidebar_enabled", False)),
+            live_enabled=bool(raw_beta.get("live_enabled", False)),
+            zoom_enabled=bool(raw_beta.get("zoom_enabled", False)),
+            hotkey_sequence=hotkey_sequence,
+            display_mode=display_mode,
+            target_monitor_id=str(raw_beta.get("target_monitor_id", "same_as_game")).strip() or "same_as_game",
+            position_x_percent=max(0, min(100, int(raw_beta.get("position_x_percent", 50)))),
+            position_y_percent=max(0, min(100, int(raw_beta.get("position_y_percent", 50)))),
+            zoom_percent=max(200, min(10000, int(raw_beta.get("zoom_percent", 200)))),
+            animation_enabled=bool(raw_beta.get("animation_enabled", False)),
+            animation_duration_ms=max(0, min(5000, int(raw_beta.get("animation_duration_ms", 180)))),
+        )
 
         return cls(**safe)

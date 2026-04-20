@@ -3,6 +3,7 @@ from __future__ import annotations
 from PySide6.QtCore import Signal, Qt
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
+    QCheckBox,
     QColorDialog,
     QFileDialog,
     QFrame,
@@ -24,6 +25,7 @@ class SettingsPage(QWidget):
     accent_color_changed = Signal(str)
     global_size_changed = Signal(int)
     storage_path_changed = Signal(str)
+    beta_features_changed = Signal(bool)
     reset_requested = Signal()
     check_updates_requested = Signal()
 
@@ -33,6 +35,7 @@ class SettingsPage(QWidget):
         accent_color: str,
         global_size_percent: int,
         storage_path: str,
+        beta_features_enabled: bool,
     ) -> None:
         super().__init__()
         self._theme_slider = QSlider(Qt.Orientation.Horizontal, self)
@@ -44,10 +47,11 @@ class SettingsPage(QWidget):
         self._global_size_label = QLabel(self)
         self._storage_path_input = QLineEdit(storage_path, self)
         self._browse_storage_button = QPushButton("Browse", self)
+        self._beta_checkbox = QCheckBox("Show Zoom Page in Sidebar", self)
         self._reset_button = QPushButton("Reset App Settings", self)
         self._check_update_button = QPushButton("Check for New Version", self)
         self._build_ui()
-        self._apply_initial_values(theme_mode, accent_color, global_size_percent, storage_path)
+        self._apply_initial_values(theme_mode, accent_color, global_size_percent, storage_path, beta_features_enabled)
         self._wire_signals()
 
     def _build_ui(self) -> None:
@@ -138,6 +142,7 @@ class SettingsPage(QWidget):
         )
         self._check_update_button.setObjectName("GhostButton")
         self._reset_button.setObjectName("DangerButton")
+        maintenance.body.addWidget(self._beta_checkbox)
         maintenance.body.addWidget(self._check_update_button)
         maintenance.body.addWidget(self._reset_button)
         maintenance.body.addStretch(1)
@@ -147,13 +152,21 @@ class SettingsPage(QWidget):
         root.addStretch(1)
         self.setLayout(root)
 
-    def _apply_initial_values(self, theme_mode: str, accent_color: str, global_size: int, storage_path: str) -> None:
+    def _apply_initial_values(
+        self,
+        theme_mode: str,
+        accent_color: str,
+        global_size: int,
+        storage_path: str,
+        beta_features_enabled: bool,
+    ) -> None:
         self._set_theme_slider_value(theme_mode)
         self._accent_input.setText(accent_color.upper())
         self._update_accent_swatch(accent_color.upper())
         self._global_size_slider.setValue(max(50, min(200, global_size)))
         self._global_size_label.setText(f"{self._global_size_slider.value()}%")
         self._storage_path_input.setText(storage_path)
+        self._beta_checkbox.setChecked(beta_features_enabled)
 
     def _wire_signals(self) -> None:
         self._theme_slider.valueChanged.connect(self._on_theme_changed)
@@ -161,6 +174,7 @@ class SettingsPage(QWidget):
         self._pick_color_button.clicked.connect(self._on_pick_color)
         self._global_size_slider.valueChanged.connect(self._on_global_size_changed)
         self._browse_storage_button.clicked.connect(self._on_browse_storage)
+        self._beta_checkbox.toggled.connect(self.beta_features_changed.emit)
         self._reset_button.clicked.connect(self.reset_requested.emit)
         self._check_update_button.clicked.connect(self.check_updates_requested.emit)
 
@@ -174,6 +188,11 @@ class SettingsPage(QWidget):
 
     def set_global_size(self, value: int) -> None:
         self._global_size_slider.setValue(value)
+
+    def set_beta_features_enabled(self, enabled: bool) -> None:
+        self._beta_checkbox.blockSignals(True)
+        self._beta_checkbox.setChecked(enabled)
+        self._beta_checkbox.blockSignals(False)
 
     def _update_accent_swatch(self, color_hex: str) -> None:
         self._accent_swatch.setStyleSheet(

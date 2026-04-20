@@ -1,6 +1,7 @@
 ﻿"""UI pages package."""
 
 from .creator_page import CreatorPage
+from .beta_page import BetaPage
 from .crosshair_detail_page import CrosshairDetailPage
 from .crosshairs_page import CrosshairsPage
 from .games_page import GamesPage
@@ -12,6 +13,7 @@ __all__ = [
     "CrosshairsPage",
     "CrosshairDetailPage",
     "CreatorPage",
+    "BetaPage",
     "GamesPage",
     "SettingsPage",
 ]

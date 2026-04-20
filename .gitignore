@@ -1,3 +1,9 @@
-/.venv
-/docs
-/__pycache__
+.venv/
+__pycache__/
+*.pyc
+*.spec
+build/
+dist/
+installer/build/
+installer/output/
+docs/

@@ -3,7 +3,7 @@ from __future__ import annotations
 import ctypes
 from ctypes import wintypes
 
-from PySide6.QtCore import QEvent, Qt
+from PySide6.QtCore import QEvent, QPoint, Qt
 from PySide6.QtWidgets import QApplication, QWidget
 
 from .config import OverlayStyle
@@ -97,6 +97,9 @@ class OverlayWindow(QWidget):
         y = top + ((height - self.height()) // 2)
         self.move(x, y)
         self._enforce_native_overlay_flags()
+
+    def crosshair_center(self) -> QPoint:
+        return self.geometry().center()
 
     def showEvent(self, event) -> None:  # noqa: N802
         super().showEvent(event)

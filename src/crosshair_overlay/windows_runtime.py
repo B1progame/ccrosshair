@@ -127,3 +127,22 @@ def foreground_monitor_bounds() -> tuple[int, int, int, int] | None:
 
     rect = monitor_info.rcMonitor
     return (rect.left, rect.top, rect.right, rect.bottom)
+
+
+def foreground_window_bounds() -> tuple[int, int, int, int] | None:
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    hwnd = user32.GetForegroundWindow()
+    if not hwnd:
+        return None
+    if not user32.IsWindowVisible(hwnd) or user32.IsIconic(hwnd):
+        return None
+
+    rect = RECT()
+    if not user32.GetWindowRect(hwnd, ctypes.byref(rect)):
+        return None
+
+    width = rect.right - rect.left
+    height = rect.bottom - rect.top
+    if width < 80 or height < 80:
+        return None
+    return (rect.left, rect.top, rect.right, rect.bottom)

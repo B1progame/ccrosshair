@@ -75,6 +75,9 @@ def _build_nav_icon(icon_key: str, color_hex: str = "#8EA9CC") -> QIcon:
         )
         for point in spokes:
             painter.drawLine(center, point)
+    elif icon_key == "zoom":
+        painter.drawEllipse(QRectF(4.5, 4.5, 8.5, 8.5))
+        painter.drawLine(12.5, 12.5, 16.5, 16.5)
     else:
         painter.drawRect(QRectF(5, 5, 10, 10))
 
@@ -178,6 +181,7 @@ class Sidebar(QFrame):
         self._collapsed = False
         self._buttons: list[NavButton] = []
         self._settings_button: NavButton | None = None
+        self._beta_button: NavButton | None = None
         self._arrow_button = ChevronButton(self)
         self._brand_frame: QFrame | None = None
         self._brand_title: QLabel | None = None
@@ -228,6 +232,12 @@ class Sidebar(QFrame):
 
         layout.addStretch(1)
 
+        beta_item = NavItem("beta", "Zoom", "zoom")
+        self._beta_button = NavButton(beta_item, self)
+        self._beta_button.setVisible(False)
+        self._buttons.append(self._beta_button)
+        layout.addWidget(self._beta_button)
+
         settings_item = NavItem("settings", "Settings", "settings")
         self._settings_button = NavButton(settings_item, self)
         self._buttons.append(self._settings_button)
@@ -256,6 +266,11 @@ class Sidebar(QFrame):
         if self._brand_subtitle is not None:
             self._brand_subtitle.setVisible(not collapsed)
         self._arrow_button.animate_to_collapsed(collapsed)
+
+    def set_beta_visible(self, visible: bool) -> None:
+        if self._beta_button is None:
+            return
+        self._beta_button.setVisible(visible)
 
     @property
     def collapsed(self) -> bool:
