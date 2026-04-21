@@ -8,3 +8,4 @@ installer/build/
 installer/output/
 docs/
 .vscode/
+UI_CHANGELOG.md
