@@ -3,11 +3,11 @@
 #endif
 
 #ifndef AppVersion
-  #define AppVersion "1.0.0"
+  #define AppVersion "1.0.1"
 #endif
 
 #ifndef AppPublisher
-  #define AppPublisher "Crosshair Overlay"
+  #define AppPublisher "B1progame"
 #endif
 
 #ifndef AppPublisherURL

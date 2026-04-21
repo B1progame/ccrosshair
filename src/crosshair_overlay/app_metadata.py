@@ -5,6 +5,7 @@ from pathlib import Path
 
 APP_NAME = "Crosshair Overlay"
 APP_EXE_NAME = "CrosshairOverlay.exe"
+APP_AUTHOR = "B1progame"
 GITHUB_OWNER = "B1progame"
 GITHUB_REPO = "ccrosshair"
 GITHUB_API_VERSION = "2026-03-10"

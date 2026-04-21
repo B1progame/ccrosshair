@@ -7,3 +7,4 @@ dist/
 installer/build/
 installer/output/
 docs/
+.vscode/
