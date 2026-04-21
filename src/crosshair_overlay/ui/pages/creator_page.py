@@ -79,7 +79,7 @@ class CreatorPage(QWidget):
         self._show_grid = QCheckBox("Grid", self)
         self._mirror_x = QCheckBox("Mirror X", self)
         self._mirror_y = QCheckBox("Mirror Y", self)
-        self._keep_on_resize = QCheckBox("Scale drawing on resolution change", self)
+        self._keep_on_resize = QCheckBox("Scale drawing on resize", self)
         self._hover_label = QLabel("-", self)
         self._anchor_label = QLabel("Line: idle", self)
         self._preview_neutral = CrosshairPreviewWidget("#242A36", "Neutral", self)
@@ -123,6 +123,7 @@ class CreatorPage(QWidget):
         header_layout.addWidget(self._resolution_combo, 1, 3)
         header_layout.addWidget(QLabel("Color", self), 0, 4)
         color_row = QHBoxLayout()
+        color_row.setContentsMargins(0, 0, 0, 0)
         color_row.setSpacing(8)
         self._color_swatch.setFixedSize(26, 26)
         self._color_swatch.setObjectName("ColorSwatch")
@@ -132,6 +133,9 @@ class CreatorPage(QWidget):
         color_widget = QWidget(self)
         color_widget.setLayout(color_row)
         header_layout.addWidget(color_widget, 1, 4)
+        header_layout.setColumnStretch(0, 2)
+        header_layout.setColumnStretch(1, 2)
+        header_layout.setColumnStretch(4, 2)
         header.setLayout(header_layout)
         root.addWidget(header)
 
@@ -149,12 +153,13 @@ class CreatorPage(QWidget):
         tool_row.setSpacing(8)
         for button, label in (
             (self._draw_tool, "Draw"),
-            (self._erase_tool, "Erase"),
+            (self._erase_tool, "Eraser"),
             (self._line_tool, "Line"),
         ):
             button.setText(label)
             button.setCheckable(True)
             button.setMinimumHeight(36)
+            button.setMinimumWidth(86)
             tool_row.addWidget(button)
         left_layout.addLayout(tool_row)
 
@@ -200,7 +205,7 @@ class CreatorPage(QWidget):
         left_layout.addWidget(info_card)
         left_layout.addStretch(1)
         left_panel.setLayout(left_layout)
-        body.addWidget(left_panel, 2)
+        body.addWidget(left_panel, 3)
 
         canvas_panel = QFrame(self)
         canvas_panel.setObjectName("EditorCanvasCard")
@@ -211,12 +216,15 @@ class CreatorPage(QWidget):
         canvas_head.addWidget(QLabel("Editor Canvas", self))
         mode_hint = QLabel("Free drawing for sketching, Pixel Art for crisp low-res shapes.", self)
         mode_hint.setObjectName("Muted")
+        mode_hint.setWordWrap(True)
+        mode_hint.setMinimumWidth(0)
+        mode_hint.setMaximumWidth(300)
         canvas_head.addStretch(1)
         canvas_head.addWidget(mode_hint)
         canvas_layout.addLayout(canvas_head)
         canvas_layout.addWidget(self._grid, 1)
         canvas_panel.setLayout(canvas_layout)
-        body.addWidget(canvas_panel, 5)
+        body.addWidget(canvas_panel, 6)
 
         right_panel = QFrame(self)
         right_panel.setObjectName("Card")
@@ -283,10 +291,20 @@ class CreatorPage(QWidget):
         self._export_button.clicked.connect(self._export)
 
     def _install_shortcuts(self) -> None:
-        QShortcut(QKeySequence("Ctrl+Z"), self, activated=self._grid.undo)
-        QShortcut(QKeySequence("Ctrl+Y"), self, activated=self._grid.redo)
-        QShortcut(QKeySequence("Ctrl+Shift+Z"), self, activated=self._grid.redo)
-        QShortcut(QKeySequence("Ctrl+S"), self, activated=lambda: self._save(activate_now=False))
+        combos = [
+            ("Ctrl+Z", self._grid.undo),
+            ("Ctrl+Y", self._grid.redo),
+            ("Ctrl+Shift+Z", self._grid.redo),
+            ("Ctrl+Shift+Y", self._grid.redo),
+            ("Ctrl+S", lambda: self._save(activate_now=False)),
+            ("B", self._activate_draw_tool),
+            ("E", self._activate_erase_tool),
+            ("L", self._activate_line_tool),
+        ]
+        for key, handler in combos:
+            shortcut = QShortcut(QKeySequence(key), self)
+            shortcut.setContext(Qt.ShortcutContext.ApplicationShortcut)
+            shortcut.activated.connect(handler)
 
     def _load_defaults(self) -> None:
         self._mode_combo.addItem("Draw Mode", userData="draw")

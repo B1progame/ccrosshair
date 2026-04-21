@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QMouseEvent, QPainter, QPen
-from PySide6.QtWidgets import QWidget
+from PySide6.QtWidgets import QSizePolicy, QWidget
 
 from .history import GridHistory
 
@@ -31,7 +31,8 @@ class GridEditorWidget(QWidget):
         self._zoom_percent = 100
         self._hover_cell: tuple[int, int] | None = None
         self._line_anchor: tuple[int, int] | None = None
-        self.setMinimumSize(520, 520)
+        self.setMinimumSize(280, 280)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setMouseTracking(True)
 
     def set_tool(self, tool: str) -> None:
@@ -148,12 +149,12 @@ class GridEditorWidget(QWidget):
 
         painter.fillRect(self.rect(), bg)
 
-        base_side = min(self.width(), self.height()) - 34
+        base_side = min(self.width(), self.height()) - 30
         scaled_side = int(base_side * (self._zoom_percent / 100.0))
         side = max(180, min(base_side, scaled_side))
         left = (self.width() - side) // 2
         top = (self.height() - side) // 2
-        self._grid_rect = QRectF(left, top, side, side)
+        self._grid_rect = QRectF(left, top, side, side).adjusted(0.5, 0.5, -0.5, -0.5)
         painter.fillRect(self._grid_rect, panel)
 
         cell_size = self._grid_rect.width() / self._grid_size
@@ -174,12 +175,12 @@ class GridEditorWidget(QWidget):
                     self._grid_rect.left() + offset,
                     self._grid_rect.top(),
                     self._grid_rect.left() + offset,
-                    self._grid_rect.bottom(),
+                    self._grid_rect.bottom() - 1,
                 )
                 painter.drawLine(
                     self._grid_rect.left(),
                     self._grid_rect.top() + offset,
-                    self._grid_rect.right(),
+                    self._grid_rect.right() - 1,
                     self._grid_rect.top() + offset,
                 )
 

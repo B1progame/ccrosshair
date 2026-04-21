@@ -75,6 +75,7 @@ class InfoChip(QLabel):
         super().__init__(text, parent)
         self.setObjectName("AccentChip" if accent else "InfoChip")
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.setMinimumHeight(26)
 
 
 class MetricCard(QFrame):

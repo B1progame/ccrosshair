@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QKeySequence, QPixmap
+from PySide6.QtCore import QRectF, Qt, Signal
+from PySide6.QtGui import QColor, QKeySequence, QPainter, QPainterPath, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -25,30 +25,50 @@ from ..components import InfoChip, PageHeader, SectionCard
 class BetaPreviewLabel(QLabel):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setMinimumSize(340, 220)
-        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._preview_pixmap = QPixmap()
+        self.setMinimumSize(260, 150)
         self.setObjectName("SubtleCard")
         self.setText("Live preview will appear here.")
 
     def set_preview(self, pixmap: QPixmap | None) -> None:
         if pixmap is None or pixmap.isNull():
+            self._preview_pixmap = QPixmap()
             self.setText("Live preview will appear here.")
-            self.setPixmap(QPixmap())
+            self.update()
             return
+        self._preview_pixmap = pixmap
         self.setText("")
-        self.setPixmap(
-            pixmap.scaled(
-                self.size(),
-                Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation,
-            )
+        self.update()
+
+    def paintEvent(self, event) -> None:  # noqa: N802
+        del event
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        outer = QRectF(self.rect()).adjusted(1, 1, -1, -1)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor("#0A1322"))
+        painter.drawRoundedRect(outer, 12, 12)
+        if self._preview_pixmap.isNull():
+            painter.setPen(QColor("#B3C1D6"))
+            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, self.text())
+            return
+
+        target = QRectF(self.rect()).adjusted(10, 10, -10, -10)
+        scaled = self._preview_pixmap.scaled(
+            target.size().toSize(),
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
         )
+        draw_rect = QRectF(0, 0, scaled.width(), scaled.height())
+        draw_rect.moveCenter(target.center())
+        clip_path = QPainterPath()
+        clip_path.addRoundedRect(target, 10, 10)
+        painter.setClipPath(clip_path)
+        painter.drawPixmap(draw_rect.toRect(), scaled)
 
     def resizeEvent(self, event) -> None:  # noqa: N802
-        pixmap = self.pixmap()
-        if pixmap is not None and not pixmap.isNull():
-            self.set_preview(pixmap)
         super().resizeEvent(event)
+        self.update()
 
 
 class BetaPage(QWidget):
@@ -111,6 +131,7 @@ class BetaPage(QWidget):
         hero_layout.addWidget(QLabel("Hotkey", self), 4, 0)
         if hasattr(self._hotkey_input, "setMaximumSequenceLength"):
             self._hotkey_input.setMaximumSequenceLength(1)
+        self._clear_hotkey_button.setText("Clear")
         hotkey_row = QHBoxLayout()
         hotkey_row.setSpacing(8)
         hotkey_row.addWidget(self._hotkey_input, 1)
@@ -121,6 +142,8 @@ class BetaPage(QWidget):
         hero_layout.addWidget(QLabel("Display Monitor", self), 4, 1)
         hero_layout.addWidget(self._monitor_combo, 5, 1)
         hero_layout.addWidget(self._preview, 6, 0, 1, 2)
+        hero_layout.setColumnStretch(0, 2)
+        hero_layout.setColumnStretch(1, 1)
         hero.setLayout(hero_layout)
         root.addWidget(hero)
 
@@ -295,8 +318,10 @@ class BetaPage(QWidget):
 
     def _refresh_visibility_state(self) -> None:
         use_monitor_controls = self._settings.display_mode == self.MODE_MONITOR
+        show_inline_preview = self._settings.display_mode == self.MODE_ON_CROSSHAIR
         self._monitor_combo.setEnabled(use_monitor_controls)
         self._position_x_slider.setEnabled(use_monitor_controls)
         self._position_y_slider.setEnabled(use_monitor_controls)
         self._position_x_label.setEnabled(use_monitor_controls)
         self._position_y_label.setEnabled(use_monitor_controls)
+        self._preview.setVisible(show_inline_preview)

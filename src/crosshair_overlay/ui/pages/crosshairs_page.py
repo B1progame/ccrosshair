@@ -3,8 +3,7 @@ from __future__ import annotations
 from collections import OrderedDict
 from pathlib import Path
 
-from PySide6.QtCore import QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QPainter, QPen
+from PySide6.QtCore import QEvent, QEasingCurve, QPropertyAnimation, QRect, QTimer, Qt, Signal
 from PySide6.QtWidgets import (
     QFileDialog,
     QFrame,
@@ -15,110 +14,13 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSlider,
-    QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
 from ...crosshairs.models import CrosshairDefinition
-from ...overlay_renderer import draw_overlay_style
+from ...widgets import CrosshairCardButton
 from ..components import InfoChip, PageHeader, SectionCard
-
-
-class CrosshairTileButton(QToolButton):
-    favorite_clicked = Signal(str)
-
-    def __init__(self, definition: CrosshairDefinition, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.definition = definition
-        self._selected = False
-        self._active = False
-        self._batch_selected = False
-        self._favorite_button = QPushButton(self)
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setCheckable(False)
-        self.setMinimumSize(176, 186)
-        self._favorite_button.setFixedSize(28, 28)
-        self._favorite_button.clicked.connect(self._emit_favorite)
-        self._refresh_favorite_button()
-
-    def set_state(self, *, selected: bool, active: bool, batch_selected: bool) -> None:
-        self._selected = selected
-        self._active = active
-        self._batch_selected = batch_selected
-        self._refresh_favorite_button()
-        self.update()
-
-    def paintEvent(self, event) -> None:  # noqa: N802
-        del event
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-
-        outer = self.rect().adjusted(2, 2, -2, -2)
-        background = QColor("#182131")
-        border = QColor("#2F3B52")
-        if self._batch_selected:
-            background = QColor("#20324A")
-            border = QColor("#69B4FF")
-        elif self._selected:
-            background = QColor("#243145")
-            border = QColor("#6FD4C9")
-        if self._active:
-            border = QColor("#59D39A")
-
-        painter.setPen(QPen(border, 2))
-        painter.setBrush(background)
-        painter.drawRoundedRect(outer, 14, 14)
-
-        preview = QRectF(outer.left() + 12, outer.top() + 12, outer.width() - 24, outer.height() - 66)
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor("#101925"))
-        painter.drawRoundedRect(preview, 12, 12)
-        draw_overlay_style(painter, preview, self.definition.style.scaled(210))
-
-        tag_y = outer.top() + 12
-        if self._active:
-            self._draw_tag(painter, outer.left() + 12, tag_y, "ACTIVE", QColor("#193B2C"), QColor("#59D39A"))
-            tag_y += 26
-        if self._batch_selected:
-            self._draw_tag(painter, outer.left() + 12, tag_y, "PACK", QColor("#1E3652"), QColor("#69B4FF"))
-        elif self._selected:
-            self._draw_tag(painter, outer.left() + 12, tag_y, "PREVIEW", QColor("#143C3A"), QColor("#6FD4C9"))
-
-        title_rect = QRectF(outer.left() + 12, outer.bottom() - 46, outer.width() - 24, 22)
-        family_rect = QRectF(outer.left() + 12, outer.bottom() - 24, outer.width() - 24, 16)
-        painter.setPen(self.palette().text().color())
-        painter.drawText(title_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, self.definition.display_name)
-        painter.setPen(QColor("#94A6C3"))
-        painter.drawText(family_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, self.definition.family)
-
-    def _draw_tag(self, painter: QPainter, x: float, y: float, text: str, bg: QColor, fg: QColor) -> None:
-        rect = QRectF(x, y, 58 if len(text) <= 6 else 72, 20)
-        painter.setPen(QPen(fg, 1))
-        painter.setBrush(bg)
-        painter.drawRoundedRect(rect, 10, 10)
-        painter.setPen(fg)
-        painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, text)
-
-    def resizeEvent(self, event) -> None:  # noqa: N802
-        super().resizeEvent(event)
-        self._favorite_button.move(self.width() - self._favorite_button.width() - 10, 10)
-
-    def sync_definition(self, definition: CrosshairDefinition) -> None:
-        self.definition = definition
-        self._refresh_favorite_button()
-        self.update()
-
-    def _refresh_favorite_button(self) -> None:
-        self._favorite_button.setText("\u2665" if self.definition.is_favorite else "\u2661")
-        self._favorite_button.setObjectName("PrimaryButton" if self.definition.is_favorite else "GhostButton")
-        self._favorite_button.setToolTip("Remove Favorite" if self.definition.is_favorite else "Add Favorite")
-        self._favorite_button.style().unpolish(self._favorite_button)
-        self._favorite_button.style().polish(self._favorite_button)
-        self._favorite_button.raise_()
-
-    def _emit_favorite(self) -> None:
-        self.favorite_clicked.emit(self.definition.style_id)
 
 
 class CrosshairsPage(QWidget):
@@ -163,8 +65,27 @@ class CrosshairsPage(QWidget):
         self._export_button = QPushButton("Export This", self)
         self._open_detail = QPushButton("Open Detail", self)
         self._favorite_button = QPushButton("Favorite", self)
-        self._tile_buttons: dict[str, CrosshairTileButton] = {}
+        self._selection_drawer = QFrame(self)
+        self._drawer_toggle_button = QPushButton("\u25c0", self._selection_drawer)
+        self._drawer_animation = QPropertyAnimation(self._selection_drawer, b"geometry", self)
+        self._drawer_animation.setDuration(220)
+        self._drawer_animation.setEasingCurve(QEasingCurve.Type.InOutCubic)
+        self._drawer_animation.finished.connect(self._on_drawer_animation_finished)
+        self._tile_buttons: dict[str, CrosshairCardButton] = {}
+        self._pending_tiles: list[tuple[int, CrosshairDefinition, int]] = []
+        self._tile_build_timer = QTimer(self)
+        self._tile_build_timer.setInterval(0)
+        self._tile_build_timer.timeout.connect(self._build_next_tile_batch)
+        self._gallery_rebuild_timer = QTimer(self)
+        self._gallery_rebuild_timer.setSingleShot(True)
+        self._gallery_rebuild_timer.setInterval(90)
+        self._gallery_rebuild_timer.timeout.connect(self._populate_gallery)
+        self._current_columns = 0
+        self._drawer_visible = False
+        self._drawer_width = 360
+        self._quick_view = "all"
         self._build_ui()
+        self._gallery_scroll.viewport().installEventFilter(self)
         self._populate_folders()
         self._populate_gallery()
         self.set_selected_size(selected_size_percent)
@@ -203,11 +124,8 @@ class CrosshairsPage(QWidget):
         top_row.setSpacing(8)
         self._search.setPlaceholderText("Search by name, family, source, or tag")
         top_row.addWidget(self._search, 1)
-        self._use_button.setObjectName("PrimaryButton")
         self._export_pack_button.setObjectName("PrimaryButton")
         self._cancel_multi_button.setObjectName("GhostButton")
-        top_row.addWidget(self._use_button)
-        top_row.addWidget(self._open_detail)
         top_row.addWidget(self._multi_button)
         top_row.addWidget(self._import_button)
         top_row.addStretch(1)
@@ -229,6 +147,7 @@ class CrosshairsPage(QWidget):
         self._folder_scroll.setWidgetResizable(True)
         self._folder_scroll.setFrameShape(QFrame.Shape.NoFrame)
         self._folder_scroll.setObjectName("FolderScrollArea")
+        self._folder_scroll.viewport().setObjectName("FolderScrollViewport")
         self._folder_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._folder_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self._folder_scroll.setWidget(self._folder_container)
@@ -245,48 +164,73 @@ class CrosshairsPage(QWidget):
             "Single click previews a style. Use the strong action button to make it live. Multi-select mode builds packs.",
             parent=self,
         )
-        self._gallery_grid.setContentsMargins(0, 0, 0, 0)
+        self._gallery_grid.setContentsMargins(8, 8, 8, 8)
         self._gallery_grid.setHorizontalSpacing(12)
         self._gallery_grid.setVerticalSpacing(12)
+        self._gallery_grid.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         self._gallery_widget.setLayout(self._gallery_grid)
         self._gallery_scroll.setWidgetResizable(True)
         self._gallery_scroll.setFrameShape(QFrame.Shape.NoFrame)
         self._gallery_scroll.setObjectName("GalleryScrollArea")
+        self._gallery_scroll.viewport().setObjectName("GalleryScrollViewport")
         self._gallery_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._gallery_scroll.setWidget(self._gallery_widget)
         gallery_card.body.addWidget(self._gallery_scroll, 1)
         content.addWidget(gallery_card, 1)
 
-        summary_card = SectionCard("Selection", "", object_name="SubtleCard", parent=self)
-        self._selection_summary.setWordWrap(True)
-        self._active_summary.setWordWrap(True)
-        summary_card.body.addWidget(QLabel("Previewed", self))
-        summary_card.body.addWidget(self._selection_summary)
-        summary_card.body.addWidget(QLabel("Active In Overlay", self))
-        summary_card.body.addWidget(self._active_summary)
-        summary_card.body.addWidget(QLabel("Current Size", self))
-        self._size_slider.setOrientation(Qt.Orientation.Horizontal)
-        self._size_slider.setMinimum(50)
-        self._size_slider.setMaximum(200)
-        self._size_slider.setSingleStep(5)
-        summary_card.body.addWidget(self._size_slider)
-        summary_card.body.addWidget(self._size_value)
-
-        actions_card = SectionCard("Actions", "", parent=self)
-        actions_card.body.addWidget(self._favorite_button)
-        actions_card.body.addWidget(self._export_button)
-        actions_card.body.addStretch(1)
-
-        bottom_row = QHBoxLayout()
-        bottom_row.setSpacing(16)
-        bottom_row.addWidget(summary_card, 3)
-        bottom_row.addWidget(actions_card, 2)
-        content.addLayout(bottom_row)
-
         root.addLayout(content, 1)
         scroll.setWidget(content_widget)
         outer.addWidget(scroll)
         self.setLayout(outer)
+        self._build_selection_drawer()
+
+    def _build_selection_drawer(self) -> None:
+        self._selection_drawer.setObjectName("Card")
+        self._selection_drawer.setFrameShape(QFrame.Shape.NoFrame)
+        self._use_button.setObjectName("PrimaryButton")
+        self._open_detail.setObjectName("GhostButton")
+        self._favorite_button.setObjectName("GhostButton")
+        self._export_button.setObjectName("GhostButton")
+        drawer_layout = QVBoxLayout()
+        drawer_layout.setContentsMargins(14, 14, 14, 14)
+        drawer_layout.setSpacing(10)
+
+        top = QHBoxLayout()
+        title = QLabel("Selection", self._selection_drawer)
+        title.setObjectName("CardTitle")
+        top.addWidget(title)
+        top.addStretch(1)
+        self._drawer_toggle_button.setObjectName("DrawerCloseButton")
+        self._drawer_toggle_button.setFixedSize(32, 32)
+        self._drawer_toggle_button.setText("X")
+        self._drawer_toggle_button.setToolTip("Hide sidebar")
+        top.addWidget(self._drawer_toggle_button)
+        drawer_layout.addLayout(top)
+
+        self._selection_summary.setWordWrap(True)
+        self._active_summary.setWordWrap(True)
+        drawer_layout.addWidget(QLabel("Previewed", self._selection_drawer))
+        drawer_layout.addWidget(self._selection_summary)
+        drawer_layout.addWidget(QLabel("Active In Overlay", self._selection_drawer))
+        drawer_layout.addWidget(self._active_summary)
+        drawer_layout.addWidget(QLabel("Current Size", self._selection_drawer))
+        self._size_slider.setOrientation(Qt.Orientation.Horizontal)
+        self._size_slider.setMinimum(50)
+        self._size_slider.setMaximum(200)
+        self._size_slider.setSingleStep(5)
+        drawer_layout.addWidget(self._size_slider)
+        drawer_layout.addWidget(self._size_value)
+
+        drawer_layout.addSpacing(4)
+        drawer_layout.addWidget(self._favorite_button)
+        drawer_layout.addWidget(self._export_button)
+        drawer_layout.addWidget(self._open_detail)
+        drawer_layout.addWidget(self._use_button)
+        drawer_layout.addStretch(1)
+
+        self._selection_drawer.setLayout(drawer_layout)
+        self._selection_drawer.hide()
+        self._selection_drawer.raise_()
 
     def _wire_signals(self) -> None:
         self._search.textChanged.connect(lambda _text: self._populate_gallery())
@@ -299,6 +243,7 @@ class CrosshairsPage(QWidget):
         self._export_button.clicked.connect(self._on_export_clicked)
         self._favorite_button.clicked.connect(self._on_toggle_favorite)
         self._size_slider.valueChanged.connect(self._on_size_changed)
+        self._drawer_toggle_button.clicked.connect(lambda: self._hide_drawer(animated=True))
 
     def _folder_entries(self) -> list[tuple[str, str]]:
         entries = [("all", "All"), ("builtin", "Built-in"), ("favorites", "Favorites")]
@@ -312,6 +257,7 @@ class CrosshairsPage(QWidget):
 
     def _populate_folders(self) -> None:
         self._folder_buttons.clear()
+        self._folder_container_layout.setContentsMargins(8, 6, 8, 6)
         while self._folder_container_layout.count() > 0:
             item = self._folder_container_layout.takeAt(0)
             if item is not None and item.widget() is not None:
@@ -338,6 +284,12 @@ class CrosshairsPage(QWidget):
         self._populate_gallery()
 
     def _matches_folder(self, item: CrosshairDefinition) -> bool:
+        if self._quick_view == "my":
+            if item.is_favorite:
+                return True
+            if item.source_type in {"custom", "creator_grid", "imported_pack", "plugin_pack", "legacy_pack"}:
+                return True
+            return False
         if self._folder_id == "all":
             return True
         if self._folder_id == "builtin":
@@ -376,6 +328,8 @@ class CrosshairsPage(QWidget):
         return items
 
     def _populate_gallery(self) -> None:
+        self._tile_build_timer.stop()
+        self._pending_tiles.clear()
         while self._gallery_grid.count() > 0:
             item = self._gallery_grid.takeAt(0)
             if item is not None and item.widget() is not None:
@@ -394,18 +348,36 @@ class CrosshairsPage(QWidget):
         if self._selected_style_id not in {item.style_id for item in filtered}:
             self._selected_style_id = filtered[0].style_id
 
-        tile_width = 186
-        viewport_width = max(tile_width, self._gallery_scroll.viewport().width())
-        columns = max(1, viewport_width // tile_width)
-        for index, definition in enumerate(filtered):
-            tile = CrosshairTileButton(definition, self)
+        min_tile_width = 182
+        spacing = max(8, self._gallery_grid.horizontalSpacing())
+        viewport_width = max(min_tile_width, self._gallery_scroll.viewport().width() - 4)
+        columns = max(1, (viewport_width + spacing) // (min_tile_width + spacing))
+        tile_width = min_tile_width
+        self._current_columns = columns
+        self._pending_tiles = [(index, definition, columns, tile_width) for index, definition in enumerate(filtered)]
+        self._build_next_tile_batch()
+        self._refresh_side_panel()
+
+    def _build_next_tile_batch(self) -> None:
+        if not self._pending_tiles:
+            self._tile_build_timer.stop()
+            self._refresh_tile_states()
+            return
+        batch_size = 18
+        for _ in range(min(batch_size, len(self._pending_tiles))):
+            index, definition, columns, tile_width = self._pending_tiles.pop(0)
+            tile = CrosshairCardButton(definition, parent=self)
+            tile.setFixedSize(tile_width, CrosshairCardButton.CARD_HEIGHT)
             tile.clicked.connect(lambda _checked=False, sid=definition.style_id: self._on_tile_clicked(sid))
             tile.favorite_clicked.connect(self.favorite_toggled.emit)
             self._tile_buttons[definition.style_id] = tile
-            self._gallery_grid.addWidget(tile, index // columns, index % columns)
-
+            row = index // columns
+            col = index % columns
+            self._gallery_grid.setRowMinimumHeight(row, CrosshairCardButton.CARD_HEIGHT)
+            self._gallery_grid.addWidget(tile, row, col)
         self._refresh_tile_states()
-        self._refresh_side_panel()
+        if self._pending_tiles:
+            self._tile_build_timer.start()
 
     def refresh_definitions(self, definitions: "OrderedDict[str, CrosshairDefinition]", selected_style_id: str) -> None:
         self._definitions = definitions
@@ -428,9 +400,62 @@ class CrosshairsPage(QWidget):
         self._size_slider.setValue(max(50, min(200, value)))
         self._size_value.setText(f"{self._size_slider.value()}%")
 
+    def set_quick_view(self, view: str) -> None:
+        view = (view or "all").strip().lower()
+        if view not in {"all", "my"}:
+            view = "all"
+        if self._quick_view == view:
+            return
+        self._quick_view = view
+        if view == "my" and self._folder_id == "builtin":
+            self._folder_id = "favorites"
+            self._populate_folders()
+        self._populate_gallery()
+
+    def _drawer_target_rect(self, visible: bool | None = None) -> QRect:
+        if visible is None:
+            visible = self._drawer_visible
+        width = self._drawer_width
+        height = max(260, self.height() - 190)
+        y = 166
+        x_visible = self.width() - width - 18
+        x_hidden = self.width() + 8
+        return QRect(x_visible if visible else x_hidden, y, width, height)
+
+    def _show_drawer(self, animated: bool = True) -> None:
+        if self._drawer_visible and self._selection_drawer.isVisible():
+            return
+        self._drawer_visible = True
+        self._selection_drawer.show()
+        self._selection_drawer.raise_()
+        if not animated:
+            self._selection_drawer.setGeometry(self._drawer_target_rect(True))
+            return
+        self._drawer_animation.stop()
+        self._drawer_animation.setStartValue(self._drawer_target_rect(False))
+        self._drawer_animation.setEndValue(self._drawer_target_rect(True))
+        self._drawer_animation.start()
+
+    def _hide_drawer(self, animated: bool = True) -> None:
+        if not self._drawer_visible:
+            return
+        self._drawer_visible = False
+        if not animated:
+            self._selection_drawer.hide()
+            return
+        self._drawer_animation.stop()
+        self._drawer_animation.setStartValue(self._selection_drawer.geometry())
+        self._drawer_animation.setEndValue(self._drawer_target_rect(False))
+        self._drawer_animation.start()
+
+    def _on_drawer_animation_finished(self) -> None:
+        if not self._drawer_visible:
+            self._selection_drawer.hide()
+
     def _on_tile_clicked(self, style_id: str) -> None:
         if style_id not in self._definitions:
             return
+        self._show_drawer(animated=True)
         if self._multi_select_mode:
             if style_id in self._selected_batch_ids:
                 self._selected_batch_ids.remove(style_id)
@@ -447,9 +472,9 @@ class CrosshairsPage(QWidget):
             if style_id in self._definitions:
                 tile.sync_definition(self._definitions[style_id])
             tile.set_state(
-                selected=style_id == self._selected_style_id,
-                active=style_id == self._active_style_id,
-                batch_selected=style_id in self._selected_batch_ids,
+                style_id == self._selected_style_id,
+                style_id == self._active_style_id,
+                style_id in self._selected_batch_ids,
             )
 
     def _refresh_side_panel(self) -> None:
@@ -458,6 +483,7 @@ class CrosshairsPage(QWidget):
 
         if selected is None:
             self._selection_summary.setText("No crosshair selected")
+            self._hide_drawer(animated=True)
         else:
             self._selection_summary.setText(
                 f"{selected.display_name}\nFamily: {selected.family}\nSource: {selected.source_type}"
@@ -550,7 +576,20 @@ class CrosshairsPage(QWidget):
         if self._selected_style_id:
             self.favorite_toggled.emit(self._selected_style_id)
 
+    def eventFilter(self, watched, event):  # noqa: N802
+        if watched == self._gallery_scroll.viewport() and event.type() == QEvent.Type.Resize:
+            self._gallery_rebuild_timer.start()
+        return super().eventFilter(watched, event)
+
+    def showEvent(self, event) -> None:  # noqa: N802
+        super().showEvent(event)
+        self._gallery_rebuild_timer.start()
+
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
-        self._populate_gallery()
+        if self._drawer_visible:
+            self._selection_drawer.setGeometry(self._drawer_target_rect(True))
+        elif self._selection_drawer.isVisible():
+            self._selection_drawer.setGeometry(self._drawer_target_rect(False))
+        self._gallery_rebuild_timer.start()
 

@@ -5,15 +5,18 @@ from pathlib import Path
 
 from PySide6.QtCore import QEasingCurve, QPropertyAnimation, Signal
 from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QStackedWidget, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFrame, QGraphicsOpacityEffect, QHBoxLayout, QStackedWidget, QVBoxLayout, QWidget
 
+from ..core import AnimationManager
 from ..crosshairs.models import CrosshairDefinition
 from ..creator.models import CreatorCrosshair
 from ..app_settings import BetaZoomSettings
+from .pages.about_page import AboutPage
 from .pages.beta_page import BetaPage
 from .pages.creator_page import CreatorPage
 from .pages.crosshair_detail_page import CrosshairDetailPage
 from .pages.crosshairs_page import CrosshairsPage
+from .pages.export_page import ExportPage
 from .pages.games_page import GameRowModel, GamesPage
 from .pages.home_page import HomePage
 from .pages.settings_page import SettingsPage
@@ -38,6 +41,8 @@ class MainWindow(QWidget):
     global_size_changed = Signal(int)
     storage_path_changed = Signal(str)
     beta_features_changed = Signal(bool)
+    auto_update_on_startup_changed = Signal(bool)
+    run_on_startup_tray_changed = Signal(bool)
     reset_requested = Signal()
     check_updates_requested = Signal()
     import_pack_requested = Signal(str)
@@ -55,7 +60,7 @@ class MainWindow(QWidget):
     beta_zoom_settings_changed = Signal(object)
     close_to_tray_requested = Signal()
 
-    EXPANDED_WIDTH = 218
+    EXPANDED_WIDTH = 236
     COLLAPSED_WIDTH = 84
 
     def __init__(
@@ -68,6 +73,8 @@ class MainWindow(QWidget):
         global_size_percent: int,
         storage_path: str,
         beta_features_enabled: bool,
+        auto_update_on_startup: bool,
+        run_on_startup_tray: bool,
         beta_zoom_settings: BetaZoomSettings,
         sidebar_collapsed: bool,
     ) -> None:
@@ -89,12 +96,18 @@ class MainWindow(QWidget):
             global_size_percent=global_size_percent,
             storage_path=storage_path,
             beta_features_enabled=beta_features_enabled,
+            auto_update_on_startup=auto_update_on_startup,
+            run_on_startup_tray=run_on_startup_tray,
         )
+        self._export_page = ExportPage()
+        self._about_page = AboutPage()
         self._sidebar = Sidebar()
         self._stack = QStackedWidget(self)
+        self._animation_manager = AnimationManager(self)
         self._page_map: dict[str, QWidget] = {}
         self._current_page_id = "home"
         self._allow_close_once = False
+        self._page_fade: QPropertyAnimation | None = None
         self._sidebar_animation = QPropertyAnimation(self._sidebar, b"minimumWidth", self)
         self._sidebar_animation.setDuration(240)
         self._sidebar_animation.setEasingCurve(QEasingCurve.Type.InOutCubic)
@@ -110,8 +123,8 @@ class MainWindow(QWidget):
         logo_path = Path(__file__).resolve().parents[1] / "assets" / "logo.svg"
         if logo_path.exists():
             self.setWindowIcon(QIcon(str(logo_path)))
-        self.resize(1120, 700)
-        self.setMinimumSize(940, 560)
+        self.resize(1180, 780)
+        self.setMinimumSize(980, 600)
 
         root = QHBoxLayout()
         root.setContentsMargins(12, 12, 12, 12)
@@ -142,18 +155,28 @@ class MainWindow(QWidget):
         self._page_map = {
             "home": self._home_page,
             "crosshairs": self._crosshairs_page,
+            "my_crosshairs": self._crosshairs_page,
             "crosshair_detail": self._detail_page,
+            "export": self._export_page,
+            "about": self._about_page,
             "creator": self._creator_page,
             "games": self._games_page,
             "beta": self._beta_page,
             "settings": self._settings_page,
         }
+        seen_pages: set[int] = set()
         for page in self._page_map.values():
+            page_key = id(page)
+            if page_key in seen_pages:
+                continue
+            seen_pages.add(page_key)
             self._stack.addWidget(page)
 
     def _wire_signals(self) -> None:
         self._sidebar.navigation_requested.connect(self.navigate_to)
         self._sidebar.collapse_toggled.connect(self.toggle_sidebar)
+        self._sidebar.theme_mode_changed.connect(self.theme_mode_changed.emit)
+        self._sidebar.quit_requested.connect(self.quit_requested.emit)
 
         self._home_page.enable_requested.connect(self.enable_overlay_requested.emit)
         self._home_page.disable_requested.connect(self.disable_overlay_requested.emit)
@@ -168,6 +191,7 @@ class MainWindow(QWidget):
         self._crosshairs_page.import_pack_requested.connect(self.import_pack_requested.emit)
         self._crosshairs_page.export_pack_requested.connect(self.export_pack_requested.emit)
         self._crosshairs_page.export_selection_requested.connect(self.export_selection_requested.emit)
+        self._export_page.export_requested.connect(self.export_pack_requested.emit)
 
         self._detail_page.back_requested.connect(lambda: self.navigate_to("crosshairs"))
         self._detail_page.activate_requested.connect(self.style_selected.emit)
@@ -186,11 +210,12 @@ class MainWindow(QWidget):
         self._games_page.open_crosshair_library_requested.connect(lambda: self.navigate_to("crosshairs"))
         self._beta_page.settings_changed.connect(self.beta_zoom_settings_changed.emit)
 
-        self._settings_page.theme_mode_changed.connect(self.theme_mode_changed.emit)
         self._settings_page.accent_color_changed.connect(self.accent_color_changed.emit)
         self._settings_page.global_size_changed.connect(self.global_size_changed.emit)
         self._settings_page.storage_path_changed.connect(self.storage_path_changed.emit)
         self._settings_page.beta_features_changed.connect(self.beta_features_changed.emit)
+        self._settings_page.auto_update_on_startup_changed.connect(self.auto_update_on_startup_changed.emit)
+        self._settings_page.run_on_startup_tray_changed.connect(self.run_on_startup_tray_changed.emit)
         self._settings_page.reset_requested.connect(self.reset_requested.emit)
         self._settings_page.check_updates_requested.connect(self.check_updates_requested.emit)
 
@@ -199,8 +224,13 @@ class MainWindow(QWidget):
     def navigate_to(self, page_id: str) -> None:
         if page_id not in self._page_map:
             return
+        if page_id == "my_crosshairs":
+            self._crosshairs_page.set_quick_view("my")
+        elif page_id == "crosshairs":
+            self._crosshairs_page.set_quick_view("all")
         page = self._page_map[page_id]
         self._stack.setCurrentWidget(page)
+        self._animate_current_page(page)
         self._current_page_id = page_id
         if page_id != "crosshair_detail":
             self._sidebar.set_selected(page_id)
@@ -235,6 +265,15 @@ class MainWindow(QWidget):
         self._sidebar.setMinimumWidth(width)
         self._sidebar.setMaximumWidth(width)
 
+    def _animate_current_page(self, page: QWidget) -> None:
+        if self._page_fade is not None:
+            self._page_fade.stop()
+        effect = page.graphicsEffect()
+        if not isinstance(effect, QGraphicsOpacityEffect):
+            effect = QGraphicsOpacityEffect(page)
+            page.setGraphicsEffect(effect)
+        self._page_fade = self._animation_manager.fade_in(page)
+
     def refresh_definitions(self, definitions: "OrderedDict[str, CrosshairDefinition]", selected_style_id: str) -> None:
         style_names = [(item.style_id, item.display_name) for item in definitions.values()]
         self._home_page.refresh_styles(style_names=style_names, selected_style_id=selected_style_id)
@@ -252,11 +291,13 @@ class MainWindow(QWidget):
 
     def set_active_style_preview(self, definition: CrosshairDefinition) -> None:
         self._home_page.set_active_style_preview(definition.style)
+        self._export_page.set_definition(definition)
 
     def set_selected_size(self, value: int) -> None:
         self._crosshairs_page.set_selected_size(value)
 
     def set_theme_values(self, theme_mode: str, accent_color: str) -> None:
+        self._sidebar.set_theme_mode(theme_mode)
         self._settings_page.set_theme(theme_mode=theme_mode, accent_color=accent_color)
 
     def set_global_size(self, value: int) -> None:
@@ -286,6 +327,15 @@ class MainWindow(QWidget):
         self._sidebar.set_beta_visible(visible)
         if not visible and self._current_page_id == "beta":
             self.navigate_to("home")
+
+    def set_startup_preferences(self, auto_update_on_startup: bool, run_on_startup_tray: bool) -> None:
+        self._settings_page.set_startup_preferences(
+            auto_update_on_startup=auto_update_on_startup,
+            run_on_startup_tray=run_on_startup_tray,
+        )
+
+    def set_update_available(self, available: bool) -> None:
+        self._sidebar.set_update_alert(bool(available))
 
     def set_beta_zoom_settings(self, settings: BetaZoomSettings) -> None:
         self._beta_page.set_settings(settings)

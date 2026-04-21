@@ -13,7 +13,7 @@ class HomePreview(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._style: OverlayStyle | None = None
-        self.setMinimumSize(210, 210)
+        self.setMinimumSize(180, 180)
 
     def set_style(self, style: OverlayStyle | None) -> None:
         self._style = style
@@ -107,17 +107,18 @@ class HomePage(QWidget):
         action_row.addStretch(1)
         left_column.addLayout(action_row)
 
+        left_wrap = QWidget(self)
+        left_wrap.setLayout(left_column)
+        hero_layout.addWidget(left_wrap, 0, 0)
+        hero_layout.addWidget(self._preview, 0, 1)
         metrics = QHBoxLayout()
         metrics.setSpacing(10)
         metrics.addWidget(self._library_metric)
         metrics.addWidget(self._theme_metric)
         metrics.addWidget(self._state_metric)
-        left_column.addLayout(metrics)
-
-        left_wrap = QWidget(self)
-        left_wrap.setLayout(left_column)
-        hero_layout.addWidget(left_wrap, 0, 0)
-        hero_layout.addWidget(self._preview, 0, 1)
+        hero_layout.addLayout(metrics, 1, 0, 1, 2)
+        hero_layout.setColumnStretch(0, 3)
+        hero_layout.setColumnStretch(1, 2)
         hero.setLayout(hero_layout)
         root.addWidget(hero)
 

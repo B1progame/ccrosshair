@@ -6,6 +6,7 @@ import signal
 import sys
 import shutil
 import ctypes
+import os
 from datetime import datetime
 from pathlib import Path
 
@@ -15,7 +16,7 @@ from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QProgressDialog,
 
 from .app_metadata import APP_VERSION
 from .app_settings import AppSettings, BetaZoomSettings, GameProfile, ThemeMode
-from .config import OverlayStyle
+from .config import OverlayShape, OverlayStyle
 from .config_manager import ConfigManager
 from .creator.conversion import creator_to_overlay_style, overlay_style_to_creator
 from .creator.io import load_creator_crosshair, save_creator_crosshair
@@ -48,11 +49,16 @@ from .windows_runtime import (
 from .ui.main_window import MainWindow
 from .ui.pages.games_page import GameRowModel
 
+try:
+    import winreg
+except Exception:  # noqa: BLE001
+    winreg = None
+
 
 class AppController(QObject):
     """Coordinates app shell, overlay state, and persistence."""
 
-    def __init__(self, app: QApplication) -> None:
+    def __init__(self, app: QApplication, start_to_tray: bool = False) -> None:
         super().__init__()
         self._app = app
         self._config = ConfigManager()
@@ -78,9 +84,13 @@ class AppController(QObject):
             global_size_percent=self._settings.global_size_percent,
             storage_path=self._settings.crosshair_storage_path,
             beta_features_enabled=self._settings.beta_zoom.sidebar_enabled,
+            auto_update_on_startup=self._settings.auto_update_on_startup,
+            run_on_startup_tray=self._settings.run_on_startup_tray,
             beta_zoom_settings=self._settings.beta_zoom,
             sidebar_collapsed=self._settings.sidebar_collapsed,
         )
+        self._start_to_tray = bool(start_to_tray)
+        self._update_available_on_startup = False
         self._overlay_visible = bool(self._settings.overlay_enabled)
         self._manual_overlay_enabled = bool(self._settings.overlay_enabled)
         self._manual_style_id = self._current_style_id
@@ -104,6 +114,7 @@ class AppController(QObject):
         self._is_quitting = False
         self._wire_signals()
         self._apply_theme()
+        self._sync_windows_autostart_setting()
         self._reload_games()
         self._setup_tray()
         if hasattr(self._app, "screenAdded"):
@@ -128,6 +139,8 @@ class AppController(QObject):
         self._main_window.storage_path_changed.connect(self.set_storage_path)
         self._main_window.reset_requested.connect(self.reset_settings)
         self._main_window.check_updates_requested.connect(self.check_for_updates)
+        self._main_window.auto_update_on_startup_changed.connect(self.set_auto_update_on_startup)
+        self._main_window.run_on_startup_tray_changed.connect(self.set_run_on_startup_tray)
         self._main_window.import_pack_requested.connect(self.import_pack)
         self._main_window.export_pack_requested.connect(self.export_current_style)
         self._main_window.export_selection_requested.connect(self.export_selected_pack)
@@ -163,6 +176,11 @@ class AppController(QObject):
         self._main_window.set_storage_path(self._settings.crosshair_storage_path)
         self._main_window.set_beta_page_visible(self._settings.beta_zoom.sidebar_enabled)
         self._main_window.set_beta_zoom_settings(self._settings.beta_zoom)
+        self._main_window.set_startup_preferences(
+            auto_update_on_startup=self._settings.auto_update_on_startup,
+            run_on_startup_tray=self._settings.run_on_startup_tray,
+        )
+        self._main_window.set_update_available(False)
         self._refresh_beta_monitor_choices()
         self._refresh_games_page()
         self._main_window.navigate_to("home")
@@ -172,6 +190,7 @@ class AppController(QObject):
         self._zoom_tick()
         if self._tray_icon is not None:
             self._tray_icon.show()
+        QTimer.singleShot(1400, self._check_updates_on_startup)
 
     def _setup_tray(self) -> None:
         if not QSystemTrayIcon.isSystemTrayAvailable():
@@ -213,9 +232,13 @@ class AppController(QObject):
                 self.show_main_window()
 
     def show_main_window(self) -> None:
-        self._main_window.show()
-        self._main_window.raise_()
-        self._main_window.activateWindow()
+        should_start_hidden = self._start_to_tray and self._settings.run_on_startup_tray
+        if should_start_hidden:
+            self._main_window.hide()
+        else:
+            self._main_window.show()
+            self._main_window.raise_()
+            self._main_window.activateWindow()
 
     def hide_main_window_to_tray(self) -> None:
         if not self._main_window.isVisible():
@@ -325,6 +348,31 @@ class AppController(QObject):
             mode = ThemeMode.SYSTEM.value
         self._settings.theme_mode = mode
         self._apply_theme()
+        self._save_settings()
+
+    def cycle_theme_mode(self) -> None:
+        order = [ThemeMode.SYSTEM.value, ThemeMode.DARK.value, ThemeMode.LIGHT.value]
+        try:
+            idx = order.index(self._settings.theme_mode)
+        except ValueError:
+            idx = 0
+        self.set_theme_mode(order[(idx + 1) % len(order)])
+
+    def set_auto_update_on_startup(self, enabled: bool) -> None:
+        self._settings.auto_update_on_startup = bool(enabled)
+        self._main_window.set_startup_preferences(
+            auto_update_on_startup=self._settings.auto_update_on_startup,
+            run_on_startup_tray=self._settings.run_on_startup_tray,
+        )
+        self._save_settings()
+
+    def set_run_on_startup_tray(self, enabled: bool) -> None:
+        self._settings.run_on_startup_tray = bool(enabled)
+        self._main_window.set_startup_preferences(
+            auto_update_on_startup=self._settings.auto_update_on_startup,
+            run_on_startup_tray=self._settings.run_on_startup_tray,
+        )
+        self._sync_windows_autostart_setting()
         self._save_settings()
 
     def set_accent_color(self, color_hex: str) -> None:
@@ -507,7 +555,54 @@ class AppController(QObject):
             self._main_window.set_overlay_status(False)
         self._reload_games()
         self._refresh_games_page()
+        self._sync_windows_autostart_setting()
         self._save_settings()
+
+    def _check_updates_on_startup(self) -> None:
+        try:
+            release = self._update_manager.fetch_latest_release(timeout_s=6.0)
+        except UpdateError:
+            self._main_window.set_update_available(False)
+            return
+
+        update_available = self._update_manager.is_newer_than_current(release) and release.installer_asset is not None
+        self._main_window.set_update_available(update_available)
+        if not update_available:
+            return
+        if not self._settings.auto_update_on_startup:
+            return
+        if not self._update_manager.can_self_update():
+            return
+        if self._confirm_update_install(release):
+            self._download_and_install_update(release)
+
+    def _sync_windows_autostart_setting(self) -> None:
+        if winreg is None or os.name != "nt":
+            return
+        key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
+        value_name = "CCCrosshairOverlay"
+        command = self._startup_command()
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE) as key:
+                if self._settings.run_on_startup_tray and command:
+                    winreg.SetValueEx(key, value_name, 0, winreg.REG_SZ, command)
+                else:
+                    try:
+                        winreg.DeleteValue(key, value_name)
+                    except OSError:
+                        pass
+        except OSError:
+            pass
+
+    def _startup_command(self) -> str:
+        if getattr(sys, "frozen", False):
+            exe = Path(sys.executable).resolve()
+            return f'"{exe}" --tray-start'
+        pythonw = Path(sys.executable).resolve()
+        main_file = Path(__file__).resolve().parents[2] / "main.py"
+        if not main_file.exists():
+            return ""
+        return f'"{pythonw}" "{main_file}" --tray-start'
 
     def check_for_updates(self, silent_if_latest: bool = False, silent_on_error: bool = False) -> None:
         progress = self._indefinite_progress_dialog("Checking GitHub releases...")
@@ -521,6 +616,7 @@ class AppController(QObject):
             progress.close()
 
         if not self._update_manager.is_newer_than_current(release):
+            self._main_window.set_update_available(False)
             if not silent_if_latest:
                 QMessageBox.information(
                     self._main_window,
@@ -530,12 +626,15 @@ class AppController(QObject):
             return
 
         if release.installer_asset is None:
+            self._main_window.set_update_available(False)
             QMessageBox.warning(
                 self._main_window,
                 "Updates",
                 "A newer GitHub release was found, but it does not contain a Windows installer asset yet.",
             )
             return
+
+        self._main_window.set_update_available(True)
 
         if not self._update_manager.can_self_update():
             QMessageBox.information(
@@ -666,7 +765,34 @@ class AppController(QObject):
         if style_id not in self._definitions:
             return
         definition = self._definitions[style_id]
-        model = overlay_style_to_creator(model_name=definition.display_name, style=definition.style, grid_size=32)
+        model: CreatorCrosshair | None = None
+
+        if definition.source_type == "creator_grid" and definition.source_path:
+            source = Path(definition.source_path)
+            if source.exists():
+                try:
+                    model = load_creator_crosshair(source)
+                except Exception:  # noqa: BLE001
+                    model = None
+
+        if model is None and definition.style.shape == OverlayShape.CUSTOM_GRID:
+            color_hex = "#{:02X}{:02X}{:02X}".format(
+                definition.style.color_rgba[0],
+                definition.style.color_rgba[1],
+                definition.style.color_rgba[2],
+            )
+            model = CreatorCrosshair(
+                name=definition.display_name,
+                grid_size=max(16, min(64, int(definition.style.custom_grid_size))),
+                creation_mode="pixel",
+                color_hex=color_hex,
+                filled_cells=[(int(x), int(y)) for x, y in definition.style.custom_filled_cells],
+                style_id=definition.style_id,
+            )
+
+        if model is None:
+            model = overlay_style_to_creator(model_name=definition.display_name, style=definition.style, grid_size=32)
+
         self._main_window.open_creator_with_model(model)
 
     def _store_imported_definition(self, definition: CrosshairDefinition, items_dir: Path, source_type: str) -> CrosshairDefinition:
@@ -1245,7 +1371,8 @@ def run() -> int:
     if logo_path.exists():
         app.setWindowIcon(QIcon(str(logo_path)))
 
-    controller = AppController(app=app)
+    start_to_tray = "--tray-start" in {arg.strip().lower() for arg in sys.argv[1:]}
+    controller = AppController(app=app, start_to_tray=start_to_tray)
     controller.start()
 
     signal.signal(signal.SIGINT, signal.SIG_DFL)

@@ -84,7 +84,8 @@ def overlay_style_to_creator(model_name: str, style: OverlayStyle, grid_size: in
                 if has_pixel:
                     break
                 for px in range(left, right):
-                    if QColor(image.pixel(px, py)).alpha() > 0:
+                    # `QImage.pixel()` drops alpha for this image format; use pixelColor().
+                    if image.pixelColor(px, py).alpha() > 0:
                         has_pixel = True
                         break
             if has_pixel:

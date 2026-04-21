@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import winreg
 from dataclasses import dataclass
+from pathlib import Path
 
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QApplication
@@ -98,7 +99,7 @@ class ThemeManager:
         )
 
     def _build_stylesheet(self, p: ThemePalette) -> str:
-        return f"""
+        base = f"""
         QWidget {{
             background: {p.base};
             color: {p.text};
@@ -208,6 +209,7 @@ class ThemeManager:
             border-radius: 12px;
             padding: 9px 14px;
             font-weight: 600;
+            min-height: 34px;
         }}
         QPushButton:hover {{
             background: {p.hover};
@@ -239,6 +241,19 @@ class ThemeManager:
             border: 1px solid {self._mix(p.danger, p.border, 0.5)};
             color: {p.text};
         }}
+        QPushButton#DrawerCloseButton {{
+            background: {self._mix(p.danger, p.panel, 0.2)};
+            border: 1px solid {self._mix(p.danger, p.border, 0.55)};
+            color: {self._mix("#FFD7DE", p.danger, 0.55)};
+            border-radius: 12px;
+            font-weight: 700;
+            min-height: 28px;
+            padding: 0px;
+        }}
+        QPushButton#DrawerCloseButton:hover {{
+            background: {self._mix(p.danger, p.panel, 0.3)};
+            border-color: {self._mix(p.danger, p.border_strong, 0.8)};
+        }}
         QPushButton#NeutralButton {{
             background: {self._mix(p.border, p.panel_alt, 0.54)};
             border: 1px solid {self._mix(p.border_strong, p.border, 0.62)};
@@ -258,11 +273,37 @@ class ThemeManager:
             background: {p.selected_strong};
             border: 1px solid {self._mix(p.accent, p.border, 0.65)};
         }}
+        QFrame#ThemeSwitchCard {{
+            background: {self._mix(p.panel_alt, p.panel, 0.86)};
+            border: 1px solid {self._mix(p.border, p.panel, 0.92)};
+            border-radius: 14px;
+        }}
+        QFrame#ThemeSwitchIndicator {{
+            background: {self._mix(p.accent, p.panel_alt, 0.26)};
+            border: 1px solid {self._mix(p.accent, p.border, 0.52)};
+            border-radius: 11px;
+        }}
+        QPushButton#ThemeSwitchOption {{
+            background: transparent;
+            border: 1px solid transparent;
+            border-radius: 11px;
+            padding: 7px 6px;
+            font-weight: 700;
+        }}
+        QPushButton#ThemeSwitchOption:hover {{
+            border-color: {self._mix(p.accent, p.border, 0.4)};
+            background: {self._mix(p.hover, p.panel, 0.6)};
+        }}
+        QPushButton#ThemeSwitchOption[active="true"] {{
+            background: transparent;
+            border-color: transparent;
+        }}
         QToolButton {{
             background: {self._mix(p.panel_alt, p.panel, 0.74)};
             border: 1px solid {p.border};
             border-radius: 12px;
             padding: 8px 10px;
+            min-height: 34px;
         }}
         QToolButton:hover {{
             background: {p.hover};
@@ -271,16 +312,17 @@ class ThemeManager:
             background: {p.selected_strong};
             border: 1px solid {self._mix(p.accent, p.border, 0.65)};
         }}
-        QComboBox, QLineEdit, QSpinBox, QTextEdit {{
+        QComboBox, QLineEdit, QSpinBox, QTextEdit, QKeySequenceEdit {{
             background: {self._mix(p.panel_alt, p.panel, 0.8)};
             border: 1px solid {p.border};
             border-radius: 12px;
             padding: 8px 10px;
+            min-height: 34px;
         }}
-        QComboBox:hover, QLineEdit:hover, QSpinBox:hover, QTextEdit:hover {{
+        QComboBox:hover, QLineEdit:hover, QSpinBox:hover, QTextEdit:hover, QKeySequenceEdit:hover {{
             border-color: {self._mix(p.accent, p.border, 0.42)};
         }}
-        QComboBox:focus, QLineEdit:focus, QSpinBox:focus, QTextEdit:focus {{
+        QComboBox:focus, QLineEdit:focus, QSpinBox:focus, QTextEdit:focus, QKeySequenceEdit:focus {{
             border-color: {self._mix(p.accent, p.border_strong, 0.72)};
         }}
         QComboBox::drop-down {{
@@ -295,6 +337,10 @@ class ThemeManager:
             background: {self._mix(p.panel_alt, p.panel, 0.86)};
             border: 1px solid {self._mix(p.border, p.panel, 0.86)};
             border-radius: 14px;
+        }}
+        QWidget#FolderScrollViewport, QWidget#GalleryScrollViewport {{
+            background: {self._mix(p.panel_alt, p.panel, 0.86)};
+            border-radius: 12px;
         }}
         QSlider::groove:horizontal {{
             height: 6px;
@@ -313,6 +359,7 @@ class ThemeManager:
             border: 1px solid {self._mix(p.accent, "#000000", 0.76)};
         }}
         QCheckBox {{
+            background: transparent;
             spacing: 8px;
         }}
         QCheckBox::indicator {{
@@ -363,6 +410,26 @@ class ThemeManager:
             padding: 6px 8px;
         }}
         """
+        return base + self._load_global_qss(p)
+
+    def _load_global_qss(self, p: ThemePalette) -> str:
+        qss_path = Path(__file__).resolve().parent / "assets" / "styles" / "global.qss"
+        try:
+            content = qss_path.read_text(encoding="utf-8")
+        except OSError:
+            return ""
+        tokens = {
+            "%%PANEL%%": p.panel,
+            "%%PANEL_ALT%%": p.panel_alt,
+            "%%TEXT%%": p.text,
+            "%%MUTED_TEXT%%": p.muted_text,
+            "%%BORDER%%": p.border,
+            "%%HOVER%%": p.hover,
+            "%%ACCENT_MID%%": self._mix(p.accent, p.border, 0.45),
+        }
+        for token, value in tokens.items():
+            content = content.replace(token, value)
+        return "\n" + content + "\n"
 
     def _normalize_color(self, raw: str, fallback: str) -> str:
         color = QColor(raw)

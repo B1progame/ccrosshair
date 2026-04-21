@@ -50,6 +50,8 @@ class AppSettings:
     favorite_style_ids: list[str] = field(default_factory=list)
     auto_enable_on_fullscreen: bool = False
     auto_switch_game_profiles: bool = True
+    auto_update_on_startup: bool = False
+    run_on_startup_tray: bool = False
     game_profiles: list[GameProfile] = field(default_factory=list)
     beta_zoom: BetaZoomSettings = field(default_factory=BetaZoomSettings)
 
@@ -69,6 +71,8 @@ class AppSettings:
 
         safe["auto_enable_on_fullscreen"] = bool(safe.get("auto_enable_on_fullscreen", False))
         safe["auto_switch_game_profiles"] = bool(safe.get("auto_switch_game_profiles", True))
+        safe["auto_update_on_startup"] = bool(safe.get("auto_update_on_startup", False))
+        safe["run_on_startup_tray"] = bool(safe.get("run_on_startup_tray", False))
 
         raw_profiles = safe.get("game_profiles", [])
         profiles: list[GameProfile] = []
