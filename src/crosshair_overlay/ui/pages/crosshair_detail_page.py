@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
+    QScrollArea,
     QSlider,
     QSpinBox,
     QVBoxLayout,
@@ -31,7 +32,7 @@ class DetailPreview(QWidget):
         super().__init__(parent)
         self._background = QColor(background)
         self._definition: CrosshairDefinition | None = None
-        self.setMinimumSize(220, 220)
+        self.setMinimumSize(220, 140)
 
     def set_definition(self, definition: CrosshairDefinition) -> None:
         self._definition = definition
@@ -41,9 +42,12 @@ class DetailPreview(QWidget):
         del event
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        painter.fillRect(self.rect(), self._background)
+        rounded_rect = self.rect().adjusted(1, 1, -1, -1)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(self._background)
+        painter.drawRoundedRect(rounded_rect, 12, 12)
         if self._definition is not None:
-            draw_overlay_style(painter, self.rect(), self._definition.style.scaled(220))
+            draw_overlay_style(painter, rounded_rect, self._definition.style.scaled(220))
 
 
 class CrosshairDetailPage(QWidget):
@@ -68,7 +72,16 @@ class CrosshairDetailPage(QWidget):
         self._build_ui()
 
     def _build_ui(self) -> None:
-        root = QVBoxLayout()
+        outer = QVBoxLayout()
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        scroll = QScrollArea(self)
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+
+        content = QWidget(self)
+        root = QVBoxLayout(content)
         root.setContentsMargins(24, 24, 24, 24)
         root.setSpacing(16)
 
@@ -151,7 +164,9 @@ class CrosshairDetailPage(QWidget):
         actions_card.body.addWidget(self._status)
         self._status.setObjectName("Muted")
         root.addWidget(actions_card)
-        self.setLayout(root)
+        scroll.setWidget(content)
+        outer.addWidget(scroll)
+        self.setLayout(outer)
 
     def set_definition(self, definition: CrosshairDefinition) -> None:
         self._definition = definition

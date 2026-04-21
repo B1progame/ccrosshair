@@ -223,7 +223,7 @@ class SettingsPage(QWidget):
         raw = self._accent_input.text().strip()
         color = QColor(raw)
         if not color.isValid():
-            color = QColor("#4A90E2")
+            color = QColor("#A923E2")
         normalized = color.name().upper()
         self._accent_input.setText(normalized)
         self._update_accent_swatch(normalized)
@@ -231,7 +231,7 @@ class SettingsPage(QWidget):
 
     def _on_pick_color(self) -> None:
         current = QColor(self._accent_input.text().strip())
-        color = QColorDialog.getColor(current if current.isValid() else QColor("#4A90E2"), self, "Pick Accent Color")
+        color = QColorDialog.getColor(current if current.isValid() else QColor("#A923E2"), self, "Pick Accent Color")
         if color.isValid():
             normalized = color.name().upper()
             self._accent_input.setText(normalized)

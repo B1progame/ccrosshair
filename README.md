@@ -15,6 +15,10 @@ It is built with `PySide6`, uses Windows-native overlay behavior, and stores you
 - Theme controls, accent color customization, and shared global size controls
 - Experimental Beta Zoom page with hotkey-based live zoom preview
 
+**Latest Update (1.2.0)**
+- UI changes and bug fixes
+- Full details: see `CHANGELOG.md`
+
 **Platform**
 - Windows 10 or Windows 11
 

@@ -52,8 +52,7 @@ class HomePage(QWidget):
         self._selected_style_label = QLabel("-", self)
         self._quick_selector = QComboBox(self)
         self._preview = HomePreview(self)
-        self._enable_button = QPushButton("Enable Overlay", self)
-        self._disable_button = QPushButton("Disable Overlay", self)
+        self._overlay_toggle_button = QPushButton("Deactivate", self)
         self._choose_button = QPushButton("Choose Crosshair", self)
         self._quit_button = QPushButton("Quit", self)
         self._library_metric = MetricCard("Library Items", "0", self)
@@ -100,11 +99,10 @@ class HomePage(QWidget):
 
         action_row = QHBoxLayout()
         self._choose_button.setObjectName("PrimaryButton")
-        self._enable_button.setObjectName("PrimaryButton")
+        self._overlay_toggle_button.setObjectName("NeutralButton")
         self._quit_button.setObjectName("GhostButton")
         action_row.addWidget(self._choose_button)
-        action_row.addWidget(self._enable_button)
-        action_row.addWidget(self._disable_button)
+        action_row.addWidget(self._overlay_toggle_button)
         action_row.addWidget(self._quit_button)
         action_row.addStretch(1)
         left_column.addLayout(action_row)
@@ -176,8 +174,7 @@ class HomePage(QWidget):
         self._load_styles(current_style_id=selected_style_id)
 
     def _wire_signals(self) -> None:
-        self._enable_button.clicked.connect(self.enable_requested.emit)
-        self._disable_button.clicked.connect(self.disable_requested.emit)
+        self._overlay_toggle_button.clicked.connect(self._on_overlay_toggle_clicked)
         self._quit_button.clicked.connect(self.quit_requested.emit)
         self._choose_button.clicked.connect(self.choose_crosshair_requested.emit)
 
@@ -186,8 +183,14 @@ class HomePage(QWidget):
         self._status_chip.setText("Overlay Online" if enabled else "Overlay Paused")
         self._status_chip.setObjectName("AccentChip" if enabled else "InfoChip")
         self._status_chip.style().polish(self._status_chip)
-        self._enable_button.setEnabled(not enabled)
-        self._disable_button.setEnabled(enabled)
+        if enabled:
+            self._overlay_toggle_button.setText("Deactivate")
+            self._overlay_toggle_button.setObjectName("NeutralButton")
+        else:
+            self._overlay_toggle_button.setText("Activate")
+            self._overlay_toggle_button.setObjectName("PrimaryButton")
+        self._overlay_toggle_button.style().unpolish(self._overlay_toggle_button)
+        self._overlay_toggle_button.style().polish(self._overlay_toggle_button)
         self._update_metrics()
 
     def set_selected_style(self, style_id: str) -> None:
@@ -207,6 +210,12 @@ class HomePage(QWidget):
         style_id = self._quick_selector.currentData()
         if isinstance(style_id, str):
             self.quick_style_selected.emit(style_id)
+
+    def _on_overlay_toggle_clicked(self) -> None:
+        if self._overlay_enabled:
+            self.disable_requested.emit()
+        else:
+            self.enable_requested.emit()
 
     def _update_metrics(self) -> None:
         for card, text in (

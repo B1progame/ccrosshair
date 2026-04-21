@@ -40,7 +40,7 @@ class BetaZoomSettings:
 @dataclass
 class AppSettings:
     theme_mode: str = ThemeMode.SYSTEM.value
-    accent_color: str = "#4A90E2"
+    accent_color: str = "#A923E2"
     selected_style_id: str = "classic_cross"
     overlay_enabled: bool = True
     sidebar_collapsed: bool = False

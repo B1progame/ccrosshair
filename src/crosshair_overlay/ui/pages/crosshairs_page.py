@@ -110,7 +110,7 @@ class CrosshairTileButton(QToolButton):
         self.update()
 
     def _refresh_favorite_button(self) -> None:
-        self._favorite_button.setText("♥" if self.definition.is_favorite else "♡")
+        self._favorite_button.setText("\u2665" if self.definition.is_favorite else "\u2661")
         self._favorite_button.setObjectName("PrimaryButton" if self.definition.is_favorite else "GhostButton")
         self._favorite_button.setToolTip("Remove Favorite" if self.definition.is_favorite else "Add Favorite")
         self._favorite_button.style().unpolish(self._favorite_button)
@@ -171,7 +171,16 @@ class CrosshairsPage(QWidget):
         self._wire_signals()
 
     def _build_ui(self) -> None:
-        root = QVBoxLayout()
+        outer = QVBoxLayout()
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        scroll = QScrollArea(self)
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+
+        content_widget = QWidget(self)
+        root = QVBoxLayout(content_widget)
         root.setContentsMargins(24, 24, 24, 24)
         root.setSpacing(16)
 
@@ -191,6 +200,7 @@ class CrosshairsPage(QWidget):
         toolbar_layout.setSpacing(12)
 
         top_row = QHBoxLayout()
+        top_row.setSpacing(8)
         self._search.setPlaceholderText("Search by name, family, source, or tag")
         top_row.addWidget(self._search, 1)
         self._use_button.setObjectName("PrimaryButton")
@@ -199,10 +209,16 @@ class CrosshairsPage(QWidget):
         top_row.addWidget(self._use_button)
         top_row.addWidget(self._open_detail)
         top_row.addWidget(self._multi_button)
-        top_row.addWidget(self._cancel_multi_button)
-        top_row.addWidget(self._export_pack_button)
         top_row.addWidget(self._import_button)
+        top_row.addStretch(1)
         toolbar_layout.addLayout(top_row)
+
+        mode_row = QHBoxLayout()
+        mode_row.setSpacing(8)
+        mode_row.addWidget(self._cancel_multi_button)
+        mode_row.addWidget(self._export_pack_button)
+        mode_row.addStretch(1)
+        toolbar_layout.addLayout(mode_row)
 
         folder_row = QHBoxLayout()
         folder_row.setSpacing(8)
@@ -212,6 +228,7 @@ class CrosshairsPage(QWidget):
         self._folder_container.setLayout(self._folder_container_layout)
         self._folder_scroll.setWidgetResizable(True)
         self._folder_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._folder_scroll.setObjectName("FolderScrollArea")
         self._folder_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._folder_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self._folder_scroll.setWidget(self._folder_container)
@@ -220,8 +237,8 @@ class CrosshairsPage(QWidget):
         toolbar.setLayout(toolbar_layout)
         root.addWidget(toolbar)
 
-        content = QHBoxLayout()
-        content.setSpacing(16)
+        content = QVBoxLayout()
+        content.setSpacing(14)
 
         gallery_card = SectionCard(
             "Crosshair Browser",
@@ -234,15 +251,15 @@ class CrosshairsPage(QWidget):
         self._gallery_widget.setLayout(self._gallery_grid)
         self._gallery_scroll.setWidgetResizable(True)
         self._gallery_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._gallery_scroll.setObjectName("GalleryScrollArea")
         self._gallery_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._gallery_scroll.setWidget(self._gallery_widget)
         gallery_card.body.addWidget(self._gallery_scroll, 1)
-        content.addWidget(gallery_card, 4)
-
-        side = QVBoxLayout()
-        side.setSpacing(16)
+        content.addWidget(gallery_card, 1)
 
         summary_card = SectionCard("Selection", "", object_name="SubtleCard", parent=self)
+        self._selection_summary.setWordWrap(True)
+        self._active_summary.setWordWrap(True)
         summary_card.body.addWidget(QLabel("Previewed", self))
         summary_card.body.addWidget(self._selection_summary)
         summary_card.body.addWidget(QLabel("Active In Overlay", self))
@@ -254,21 +271,22 @@ class CrosshairsPage(QWidget):
         self._size_slider.setSingleStep(5)
         summary_card.body.addWidget(self._size_slider)
         summary_card.body.addWidget(self._size_value)
-        side.addWidget(summary_card)
 
         actions_card = SectionCard("Actions", "", parent=self)
         actions_card.body.addWidget(self._favorite_button)
         actions_card.body.addWidget(self._export_button)
         actions_card.body.addStretch(1)
-        side.addWidget(actions_card)
-        side.addStretch(1)
 
-        side_wrap = QWidget(self)
-        side_wrap.setLayout(side)
-        content.addWidget(side_wrap, 2)
+        bottom_row = QHBoxLayout()
+        bottom_row.setSpacing(16)
+        bottom_row.addWidget(summary_card, 3)
+        bottom_row.addWidget(actions_card, 2)
+        content.addLayout(bottom_row)
 
         root.addLayout(content, 1)
-        self.setLayout(root)
+        scroll.setWidget(content_widget)
+        outer.addWidget(scroll)
+        self.setLayout(outer)
 
     def _wire_signals(self) -> None:
         self._search.textChanged.connect(lambda _text: self._populate_gallery())
@@ -315,6 +333,7 @@ class CrosshairsPage(QWidget):
         for fid, button in self._folder_buttons.items():
             button.setChecked(fid == folder_id)
             button.setObjectName("PrimaryButton" if fid == folder_id else "")
+            button.style().unpolish(button)
             button.style().polish(button)
         self._populate_gallery()
 
@@ -443,7 +462,7 @@ class CrosshairsPage(QWidget):
             self._selection_summary.setText(
                 f"{selected.display_name}\nFamily: {selected.family}\nSource: {selected.source_type}"
             )
-            self._favorite_button.setText("♥ Remove Favorite" if selected.is_favorite else "♡ Add Favorite")
+            self._favorite_button.setText("\u2665 Remove Favorite" if selected.is_favorite else "\u2661 Add Favorite")
 
         if active is None:
             self._active_summary.setText("No active crosshair")
@@ -534,3 +553,4 @@ class CrosshairsPage(QWidget):
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
         self._populate_gallery()
+

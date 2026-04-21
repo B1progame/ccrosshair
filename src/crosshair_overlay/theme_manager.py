@@ -36,7 +36,7 @@ class ThemeManager:
 
     def apply(self, theme_mode: str, accent_hex: str) -> None:
         resolved_mode = self._resolve_mode(theme_mode)
-        accent = self._normalize_color(accent_hex, "#4A90E2")
+        accent = self._normalize_color(accent_hex, "#A923E2")
         palette = self._build_palette(resolved_mode=resolved_mode, accent=accent)
         self._app.setStyleSheet(self._build_stylesheet(palette))
 
@@ -239,6 +239,15 @@ class ThemeManager:
             border: 1px solid {self._mix(p.danger, p.border, 0.5)};
             color: {p.text};
         }}
+        QPushButton#NeutralButton {{
+            background: {self._mix(p.border, p.panel_alt, 0.54)};
+            border: 1px solid {self._mix(p.border_strong, p.border, 0.62)};
+            color: {self._mix(p.text, p.muted_text, 0.9)};
+        }}
+        QPushButton#NeutralButton:hover {{
+            background: {self._mix(p.border, p.panel_alt, 0.68)};
+            border-color: {self._mix(p.border_strong, p.border, 0.84)};
+        }}
         QPushButton#SidebarHomeButton, QPushButton#SidebarNavButton {{
             text-align: left;
             padding: 10px 12px;
@@ -281,6 +290,11 @@ class ThemeManager:
         QListWidget, QScrollArea {{
             background: transparent;
             border: none;
+        }}
+        QScrollArea#FolderScrollArea, QScrollArea#GalleryScrollArea {{
+            background: {self._mix(p.panel_alt, p.panel, 0.86)};
+            border: 1px solid {self._mix(p.border, p.panel, 0.86)};
+            border-radius: 14px;
         }}
         QSlider::groove:horizontal {{
             height: 6px;
