@@ -11,6 +11,7 @@ from ..core import AnimationManager
 from ..crosshairs.models import CrosshairDefinition
 from ..creator.models import CreatorCrosshair
 from ..app_settings import BetaZoomSettings
+from ..app_metadata import APP_VERSION
 from .pages.about_page import AboutPage
 from .pages.beta_page import BetaPage
 from .pages.creator_page import CreatorPage
@@ -21,6 +22,7 @@ from .pages.games_page import GameRowModel, GamesPage
 from .pages.home_page import HomePage
 from .pages.settings_page import SettingsPage
 from .react_surface import ReactSurface
+from .bridge_router import BridgeCommandRouter
 from .sidebar import Sidebar
 
 
@@ -86,6 +88,23 @@ class MainWindow(QWidget):
         self._theme_mode = theme_mode
         self._resolved_theme = theme_mode if theme_mode in {"dark", "light"} else "dark"
         self._accent_color = accent_color
+        self._storage_path = storage_path
+        self._selected_size = selected_size_percent
+        self._global_size = global_size_percent
+        self._auto_update_on_startup = auto_update_on_startup
+        self._run_on_startup_tray = run_on_startup_tray
+        self._beta_zoom_settings = beta_zoom_settings
+        self._beta_visible = beta_features_enabled
+        self._sidebar_collapsed = bool(sidebar_collapsed)
+        self._fullscreen_auto = False
+        self._game_auto_switch = True
+        self._games_data: list[GameRowModel] = []
+        self._style_names: list[tuple[str, str]] = [(item.style_id, item.display_name) for item in definitions.values()]
+        self._games_status = ""
+        self._beta_monitors: list[tuple[str, str]] = []
+        self._creator_model: dict | None = None
+        self._web_page = "library"
+        self._bridge_router = BridgeCommandRouter(self)
         style_names = [(item.style_id, item.display_name) for item in definitions.values()]
         self._home_page = HomePage(style_names=style_names, current_style_id=current_style_id)
         self._crosshairs_page = CrosshairsPage(
@@ -114,6 +133,7 @@ class MainWindow(QWidget):
         self._web_loaded = False
         self._web_selected_id = current_style_id
         self._web_revision = 0
+        self._web_catalog_revision = 0
         self._animation_manager = AnimationManager(self)
         self._page_map: dict[str, QWidget] = {}
         self._current_page_id = "home"
@@ -190,6 +210,7 @@ class MainWindow(QWidget):
                 continue
             seen_pages.add(page_key)
             self._stack.addWidget(page)
+        self._react_surface.start()
 
     def _wire_signals(self) -> None:
         self._sidebar.navigation_requested.connect(self.navigate_to)
@@ -306,19 +327,66 @@ class MainWindow(QWidget):
 
     def _web_snapshot(self) -> dict:
         self._web_revision += 1
-        return {"version": 1, "revision": self._web_revision, "theme": self._theme_mode, "resolvedTheme": self._resolved_theme, "accent": self._accent_color,
+        visible_styles = list(self._definitions.values())[:48]
+        visible_ids = {item.style_id for item in visible_styles}
+        for style_id in (self._web_selected_id, self._active_style_id):
+            if style_id in self._definitions and style_id not in visible_ids:
+                visible_styles.append(self._definitions[style_id])
+                visible_ids.add(style_id)
+        return {"version": 1, "revision": self._web_revision, "theme": self._theme_mode, "resolvedTheme": self._resolved_theme, "accent": self._accent_color, "appVersion": APP_VERSION, "runtime": "native",
                 "overlay": self._overlay_status, "activeId": self._active_style_id,
-                "selectedId": self._web_selected_id, "styles": [self._style_payload(item) for item in self._definitions.values()]}
+                "selectedId": self._web_selected_id, "page": self._web_page,
+                "styleCount": len(self._definitions), "catalogRevision": self._web_catalog_revision,
+                "styles": [self._style_payload(item) for item in visible_styles],
+                "settings": {"selectedSize": self._selected_size, "globalSize": self._global_size,
+                             "theme": self._theme_mode, "accent": self._accent_color,
+                             "autoUpdate": self._auto_update_on_startup, "startupTray": self._run_on_startup_tray,
+                             "fullscreenAuto": self._fullscreen_auto, "gameAutoSwitch": self._game_auto_switch,
+                             "storagePath": self._storage_path, "betaVisible": self._beta_visible,
+                             "sidebarCollapsed": self._sidebar_collapsed,
+                             "zoom": self._zoom_payload(), "monitors": [{"id": mid, "name": name} for mid, name in self._beta_monitors]},
+                "games": [{"id": g.game_id, "title": g.title, "source": g.source, "executablePath": g.executable_path,
+                           "iconPath": g.icon_path, "styleId": g.assigned_style_id, "enabled": g.enabled} for g in self._games_data],
+                "gamesStatus": self._games_status, "creator": self._creator_model}
+
+    def _zoom_payload(self) -> dict:
+        s = self._beta_zoom_settings
+        return {"sidebarEnabled": s.sidebar_enabled, "liveEnabled": s.live_enabled, "zoomEnabled": s.zoom_enabled,
+                "hotkeySequence": s.hotkey_sequence, "displayMode": s.display_mode, "targetMonitorId": s.target_monitor_id,
+                "positionXPercent": s.position_x_percent, "positionYPercent": s.position_y_percent,
+                "zoomPercent": s.zoom_percent, "animationEnabled": s.animation_enabled, "animationDurationMs": s.animation_duration_ms}
 
     def _style_payload(self, item: CrosshairDefinition) -> dict:
         s = item.style
         rgba = getattr(s, "color_rgba", (255, 255, 255, 255))
+        outline_rgba = getattr(s, "outline_rgba", (0, 0, 0, 220))
         return {"id": item.style_id, "name": item.display_name, "family": item.family,
                 "source": item.source_type, "tags": list(item.tags), "favorite": item.is_favorite,
                 "color": "#%02x%02x%02x" % tuple(rgba[:3]), "opacity": int(rgba[3]) if len(rgba) > 3 else 255,
                 "shape": str(getattr(s.shape, "value", s.shape)), "dot": bool(s.center_dot),
                 "active": item.style_id == self._active_style_id, "armLength": s.arm_length,
-                "gap": s.gap, "thickness": s.thickness, "circleRadius": s.circle_radius, "tStyle": s.t_style}
+                "gap": s.gap, "thickness": s.thickness, "circleRadius": s.circle_radius,
+                "circleThickness": s.circle_thickness, "centerDotSize": s.center_dot_size,
+                "tStyle": s.t_style, "rotationDegrees": s.rotation_degrees,
+                "outlineEnabled": s.outline_enabled, "outlineThickness": s.outline_thickness,
+                "outlineColor": "#%02x%02x%02x" % tuple(outline_rgba[:3]),
+                "outlineOpacity": int(outline_rgba[3]) if len(outline_rgba) > 3 else 255,
+                "customGridSize": s.custom_grid_size, "customCellSize": s.custom_cell_size,
+                "customFilledCells": [[x, y] for x, y in s.custom_filled_cells],
+                "canvasSize": s.canvas_size, "description": item.description,
+                "editableSettings": [self._editable_payload(item, spec.key, spec.label, spec.kind.value, spec.minimum, spec.maximum, spec.step) for spec in item.editable_settings]}
+
+    @staticmethod
+    def _editable_payload(item: CrosshairDefinition, key: str, label: str, kind: str, minimum, maximum, step) -> dict:
+        if key == "color_rgba":
+            value = "#{:02X}{:02X}{:02X}".format(*item.style.color_rgba[:3])
+        elif key == "opacity":
+            value = item.style.color_rgba[3]
+        elif hasattr(item.style, key):
+            value = getattr(item.style, key)
+        else:
+            value = None
+        return {"key": key, "label": label, "kind": kind, "minimum": minimum, "maximum": maximum, "step": step, "value": value}
 
     def _publish_web_event(self, snapshot: dict | None = None) -> None:
         self._react_surface.publish(snapshot or self._publish_web_state())
@@ -327,71 +395,24 @@ class MainWindow(QWidget):
         try:
             if not isinstance(payload, dict):
                 raise ValueError("Command payload must be an object")
-            result = self._handle_web_command(command, payload)
+            result = self._bridge_router.dispatch(command, payload)
             self._react_surface.complete(request_id, result)
         except Exception as exc:
             self._react_surface.complete(request_id, error=str(exc))
-
-    def _handle_web_command(self, command: str, payload: dict) -> object:
-        fields = {
-            "ready": set(), "selectStyle": {"styleId"}, "activateStyle": {"styleId"},
-            "toggleFavorite": {"styleId"}, "openDetail": {"styleId"},
-            "setOverlay": {"enabled"}, "navigate": {"page"}, "toggleNative": set(),
-            "setTheme": {"theme"},
-        }
-        if command not in fields or set(payload) != fields[command]:
-            raise ValueError("Invalid command or payload")
-        if command == "ready": return self._publish_web_state()
-        if command in {"selectStyle", "activateStyle", "toggleFavorite", "openDetail"}:
-            style_id = payload.get("styleId")
-            if not isinstance(style_id, str) or style_id not in self._definitions:
-                raise ValueError("Unknown crosshair style")
-            self._web_selected_id = style_id
-            if command == "selectStyle":
-                self._crosshairs_page.set_previewed_style(style_id)
-            elif command == "activateStyle": self.style_selected.emit(style_id)
-            elif command == "toggleFavorite": self.style_favorite_toggled.emit(style_id)
-            else:
-                self._on_detail_requested(style_id)
-            self._publish_web_event()
-            return {"accepted": True}
-        if command == "setOverlay":
-            enabled = payload.get("enabled")
-            if not isinstance(enabled, bool): raise ValueError("enabled must be a boolean")
-            (self.enable_overlay_requested if enabled else self.disable_overlay_requested).emit()
-            return {"accepted": True}
-        if command == "navigate":
-            routes = {"home":"home", "library":"crosshairs", "my_crosshairs":"my_crosshairs", "creator":"creator", "games":"games", "settings":"settings"}
-            target = payload.get("page")
-            if target not in routes: raise ValueError("Unsupported page")
-            if target in {"library", "my_crosshairs"}:
-                if self._web_index >= 0:
-                    self._surface_stack.setCurrentIndex(self._web_index)
-            else:
-                self.show_native_surface()
-                self.navigate_to(routes[target])
-            return {"accepted": True}
-        if command == "toggleNative":
-            self.show_native_surface()
-            return {"accepted": True}
-        if command == "setTheme":
-            theme = payload.get("theme")
-            if theme not in {"light", "dark", "system"}: raise ValueError("Unsupported theme")
-            self.theme_mode_changed.emit(theme)
-            return {"accepted": True}
-        raise ValueError("Unsupported command")
 
     def _publish_web_state(self) -> dict:
         return self._web_snapshot()
 
     def _update_web_definitions(self, definitions: "OrderedDict[str, CrosshairDefinition]") -> None:
         self._definitions = definitions
+        self._web_catalog_revision += 1
         self._publish_web_event()
 
     def toggle_sidebar(self) -> None:
         self._apply_sidebar_state(not self._sidebar.collapsed, animate=True)
 
     def _apply_sidebar_state(self, collapsed: bool, animate: bool) -> None:
+        self._sidebar_collapsed = collapsed
         self._sidebar.set_collapsed(collapsed)
         target_width = self.COLLAPSED_WIDTH if collapsed else self.EXPANDED_WIDTH
         if animate:
@@ -418,9 +439,12 @@ class MainWindow(QWidget):
             page.setGraphicsEffect(effect)
         self._page_fade = self._animation_manager.fade_in(page)
 
-    def refresh_definitions(self, definitions: "OrderedDict[str, CrosshairDefinition]", selected_style_id: str) -> None:
+    def refresh_definitions(self, definitions: "OrderedDict[str, CrosshairDefinition]", selected_style_id: str, catalog_changed: bool = True) -> None:
         self._definitions = definitions
-        self._web_selected_id = selected_style_id
+        if catalog_changed:
+            self._web_catalog_revision += 1
+        if self._web_selected_id not in definitions:
+            self._web_selected_id = selected_style_id
         style_names = [(item.style_id, item.display_name) for item in definitions.values()]
         self._home_page.refresh_styles(style_names=style_names, selected_style_id=selected_style_id)
         self._crosshairs_page.refresh_definitions(definitions=definitions, selected_style_id=selected_style_id)
@@ -433,7 +457,6 @@ class MainWindow(QWidget):
 
     def set_selected_style(self, style_id: str) -> None:
         self._active_style_id = style_id
-        self._web_selected_id = style_id
         self._home_page.set_selected_style(style_id)
         self._crosshairs_page.set_selected_style(style_id)
         self._publish_web_event()
@@ -446,7 +469,9 @@ class MainWindow(QWidget):
         self._export_page.set_definition(definition)
 
     def set_selected_size(self, value: int) -> None:
+        self._selected_size = value
         self._crosshairs_page.set_selected_size(value)
+        self._publish_web_event()
 
     def set_theme_values(self, theme_mode: str, accent_color: str, resolved_theme: str | None = None) -> None:
         self._theme_mode = theme_mode
@@ -459,47 +484,74 @@ class MainWindow(QWidget):
         self._publish_web_event()
 
     def set_global_size(self, value: int) -> None:
+        self._global_size = value
         self._settings_page.set_global_size(value)
+        self._publish_web_event()
 
     def set_storage_path(self, path: str) -> None:
+        self._storage_path = path
         self._settings_page.set_storage_path(path)
+        self._publish_web_event()
 
     def open_creator_with_model(self, model: CreatorCrosshair) -> None:
         self._creator_page.load_from_model(model)
+        self._creator_model = model.to_dict()
+        if self._surface_stack.currentIndex() == self._web_index:
+            self._web_page = "creator"
+            self._publish_web_event()
+            return
+        self._publish_web_event()
         self.navigate_to("creator")
 
     def set_games_data(self, games: list[GameRowModel], style_items: list[tuple[str, str]]) -> None:
+        self._games_data = list(games)
+        self._style_names = list(style_items)
         self._games_page.set_games(games=games, style_items=style_items)
+        self._publish_web_event()
 
     def set_games_toggles(self, fullscreen_enabled: bool, game_switch_enabled: bool) -> None:
+        self._fullscreen_auto = bool(fullscreen_enabled)
+        self._game_auto_switch = bool(game_switch_enabled)
         self._games_page.set_runtime_toggles(
             fullscreen_enabled=fullscreen_enabled,
             game_switch_enabled=game_switch_enabled,
         )
+        self._publish_web_event()
 
     def set_games_status(self, text: str) -> None:
+        self._games_status = text
         self._games_page.set_runtime_status(text)
+        self._publish_web_event()
 
     def set_beta_page_visible(self, visible: bool) -> None:
+        self._beta_visible = bool(visible)
         self._settings_page.set_beta_features_enabled(visible)
         self._sidebar.set_beta_visible(visible)
         if not visible and self._current_page_id == "beta":
             self.navigate_to("home")
+        self._publish_web_event()
 
     def set_startup_preferences(self, auto_update_on_startup: bool, run_on_startup_tray: bool) -> None:
+        self._auto_update_on_startup = bool(auto_update_on_startup)
+        self._run_on_startup_tray = bool(run_on_startup_tray)
         self._settings_page.set_startup_preferences(
             auto_update_on_startup=auto_update_on_startup,
             run_on_startup_tray=run_on_startup_tray,
         )
+        self._publish_web_event()
 
     def set_update_available(self, available: bool) -> None:
         self._sidebar.set_update_alert(bool(available))
 
     def set_beta_zoom_settings(self, settings: BetaZoomSettings) -> None:
+        self._beta_zoom_settings = settings
         self._beta_page.set_settings(settings)
+        self._publish_web_event()
 
     def set_beta_monitor_choices(self, choices: list[tuple[str, str]]) -> None:
+        self._beta_monitors = list(choices)
         self._beta_page.set_monitor_choices(choices)
+        self._publish_web_event()
 
     def set_beta_preview(self, pixmap) -> None:
         self._beta_page.set_preview_pixmap(pixmap)

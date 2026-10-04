@@ -7,6 +7,7 @@ import unittest
 from collections import OrderedDict
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -18,9 +19,13 @@ from PySide6.QtTest import QSignalSpy, QTest
 from PySide6.QtWidgets import QApplication
 
 from crosshair_overlay.config import OverlayStyle
+from crosshair_overlay.app import AppController
+from crosshair_overlay.creator.models import CreatorCrosshair
 from crosshair_overlay.crosshairs.catalog import build_builtin_catalog
 from crosshair_overlay.crosshairs.io import save_xhair
+from crosshair_overlay.storage_paths import StoragePaths
 from crosshair_overlay.theme_manager import ThemeManager
+from crosshair_overlay.ui.bridge_router import BridgeCommandRouter
 from crosshair_overlay.ui.pages.crosshairs_page import CrosshairsPage
 from crosshair_overlay.ui.pages.settings_page import SettingsPage
 from crosshair_overlay.ui.sidebar import ChevronButton
@@ -90,6 +95,57 @@ class UiRegressionTests(unittest.TestCase):
         manager = ThemeManager(self.app)
         self.assertEqual(manager._contrast_text("#FFFF00"), "#111615")
         self.assertEqual(manager._contrast_text("#223344"), "#FFFFFF")
+
+    def test_catalog_query_is_bounded_for_ten_thousand_styles(self) -> None:
+        class Window:
+            def __init__(self) -> None:
+                self._definitions = OrderedDict()
+
+            @staticmethod
+            def _style_payload(item):
+                return {"id": item.style_id, "name": item.display_name}
+
+        window = Window()
+        for index in range(10_000):
+            item = SimpleNamespace(
+                style_id=f"style-{index}", display_name=f"Benchmark {index:05d}",
+                family="Benchmark", source_type="custom" if index % 5 == 0 else "builtin",
+                tags=("performance",), is_favorite=index % 7 == 0,
+            )
+            window._definitions[item.style_id] = item
+        router = BridgeCommandRouter(window)
+        result = router.dispatch("queryCatalog", {"query": "benchmark", "filter": "all", "page": 0, "pageSize": 36})
+        self.assertEqual(result["total"], 10_000)
+        self.assertEqual(len(result["styles"]), 36)
+        match = router.dispatch("queryCatalog", {"query": "benchmark 09999", "filter": "all", "page": 0, "pageSize": 36})
+        self.assertEqual(match["total"], 1)
+        self.assertEqual(match["styles"][0]["id"], "style-9999")
+
+    def test_catalog_query_rejects_oversized_pages(self) -> None:
+        class Window:
+            _definitions = OrderedDict()
+        router = BridgeCommandRouter(Window())
+        with self.assertRaises(ValueError):
+            router.dispatch("queryCatalog", {"query": "", "filter": "all", "page": 0, "pageSize": 100_000})
+
+    def test_new_creator_save_avoids_builtin_ids_and_existing_creator_is_updated(self) -> None:
+        class ControllerHarness:
+            _creator_style_id = AppController._creator_style_id
+            _next_available_style_id = AppController._next_available_style_id
+            _slugify = AppController._slugify
+
+            def __init__(self, storage: Path) -> None:
+                self._definitions = build_builtin_catalog()
+                self._storage_paths = StoragePaths(storage)
+
+        controller = ControllerHarness(Path(tempfile.gettempdir()) / "crosshair-creator-id-test")
+        model = CreatorCrosshair("Classic Cross", 32, "#FFFFFF", [])
+        self.assertEqual(controller._creator_style_id(model, model.name), "classic_cross_2")
+        controller._definitions["creator_test"] = replace(
+            self.definitions["classic_cross"], style=OverlayStyle(**{**self.definitions["classic_cross"].style.__dict__, "style_id": "creator_test"}), source_type="creator_grid"
+        )
+        model.style_id = "creator_test"
+        self.assertEqual(controller._creator_style_id(model, model.name), "creator_test")
 
 
 if __name__ == "__main__":

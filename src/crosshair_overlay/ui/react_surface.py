@@ -114,6 +114,12 @@ class ReactSurface(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.view)
         self.view.loadFinished.connect(self.load_finished)
+        self._started = False
+
+    def start(self) -> None:
+        if self._started:
+            return
+        self._started = True
         if (self._bundle / "index.html").is_file():
             self.view.load(QUrl("crosshair://ui/index.html"))
         else:

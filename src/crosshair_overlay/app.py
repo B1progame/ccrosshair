@@ -61,6 +61,10 @@ class _WorkerSignals(QObject):
     progress = Signal(int, int)
 
 
+class _WorkerReaper(QObject):
+    released = Signal(int)
+
+
 class _ReleaseCheckWorker(QRunnable):
     def __init__(self, update_manager: UpdateManager, timeout_s: float = 6.0) -> None:
         super().__init__()
@@ -125,6 +129,9 @@ class AppController(QObject):
     def __init__(self, app: QApplication, start_to_tray: bool = False) -> None:
         super().__init__()
         self._app = app
+        self._workers: dict[int, QRunnable] = {}
+        self._worker_reaper = _WorkerReaper(self)
+        self._worker_reaper.released.connect(self._forget_worker, Qt.ConnectionType.QueuedConnection)
         self._config = ConfigManager()
         self._settings = self._config.load()
         self._storage_paths = StoragePaths(Path(self._settings.crosshair_storage_path))
@@ -231,6 +238,15 @@ class AppController(QObject):
         self._main_window.beta_features_changed.connect(self.set_beta_features_enabled)
         self._main_window.beta_zoom_settings_changed.connect(self.set_beta_zoom_settings)
         self._main_window.close_to_tray_requested.connect(self.hide_main_window_to_tray)
+
+    def _start_worker(self, worker: QRunnable) -> None:
+        worker_key = id(worker)
+        self._workers[worker_key] = worker
+        worker.signals.finished.connect(lambda *_args, key=worker_key: self._worker_reaper.released.emit(key))
+        QThreadPool.globalInstance().start(worker)
+
+    def _forget_worker(self, worker_key: int) -> None:
+        self._workers.pop(worker_key, None)
 
     def start(self) -> None:
         if self._overlay_visible:
@@ -360,11 +376,9 @@ class AppController(QObject):
             return
         self._definitions[definition.style_id] = definition
         self._library.upsert_runtime_definition(definition)
-        if definition.style_id != self._current_style_id:
-            self.set_overlay_style(definition.style_id)
-        else:
+        if definition.style_id == self._current_style_id:
             self._overlay.set_style(self._effective_style())
-        self._main_window.refresh_definitions(self._definitions, selected_style_id=self._current_style_id)
+        self._main_window.refresh_definitions(self._definitions, selected_style_id=self._current_style_id, catalog_changed=False)
         self._main_window.set_detail_definition(definition)
         self._main_window.set_active_style_preview(self._definitions[self._current_style_id])
 
@@ -639,7 +653,7 @@ class AppController(QObject):
         self._update_check_running = True
         worker = _ReleaseCheckWorker(self._update_manager)
         worker.signals.finished.connect(self._handle_startup_update_result)
-        QThreadPool.globalInstance().start(worker)
+        self._start_worker(worker)
 
     def _handle_startup_update_result(self, result: object) -> None:
         self._update_check_running = False
@@ -694,7 +708,7 @@ class AppController(QObject):
         self._manual_update_progress = self._indefinite_progress_dialog("Checking GitHub releases...")
         worker = _ReleaseCheckWorker(self._update_manager, timeout_s=8.0)
         worker.signals.finished.connect(self._handle_manual_update_result)
-        QThreadPool.globalInstance().start(worker)
+        self._start_worker(worker)
 
     def _handle_manual_update_result(self, result: object) -> None:
         self._update_check_running = False
@@ -779,7 +793,7 @@ class AppController(QObject):
         worker = _DownloadUpdateWorker(self._update_manager, release)
         worker.signals.progress.connect(self._handle_update_progress)
         worker.signals.finished.connect(self._handle_update_download_result)
-        QThreadPool.globalInstance().start(worker)
+        self._start_worker(worker)
 
     def _handle_update_progress(self, downloaded: int, total: int) -> None:
         if self._download_progress is not None:
@@ -826,7 +840,8 @@ class AppController(QObject):
             return
         try:
             style = creator_to_overlay_style(model)
-            style = style_with_updates(style, {"style_id": self._slugify(style.display_name)})
+            style_id = self._creator_style_id(model, style.display_name)
+            style = style_with_updates(style, {"style_id": style_id})
             creator_model = CreatorCrosshair(
                 name=model.name,
                 grid_size=model.grid_size,
@@ -909,6 +924,14 @@ class AppController(QObject):
         destination = items_dir / f"{target_id}.xhair"
         save_xhair(stored, destination)
         return stored
+
+    def _creator_style_id(self, model: CreatorCrosshair, display_name: str) -> str:
+        existing = self._definitions.get(model.style_id)
+        if existing is not None and existing.source_type == "creator_grid":
+            return model.style_id
+        return self._next_available_style_id(
+            self._slugify(display_name), self._storage_paths.creator_dir, ".chgrid"
+        )
 
     def _next_available_style_id(self, base_id: str, directory: Path, suffix: str) -> str:
         existing_ids = set(self._definitions.keys())
@@ -1004,7 +1027,7 @@ class AppController(QObject):
         self._game_scan_generation += 1
         worker = _GameScanWorker(self._game_scan_generation)
         worker.signals.finished.connect(self._handle_game_scan_result)
-        QThreadPool.globalInstance().start(worker)
+        self._start_worker(worker)
 
     def _handle_game_scan_result(self, payload: object) -> None:
         self._game_scan_running = False
