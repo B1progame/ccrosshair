@@ -29,7 +29,7 @@ class CrosshairsPage(QWidget):
     favorite_toggled = Signal(str)
     selected_size_changed = Signal(int)
     import_pack_requested = Signal(str)
-    export_pack_requested = Signal(str)
+    export_pack_requested = Signal(str, str)
     export_selection_requested = Signal(list, str)
 
     def __init__(
@@ -40,6 +40,7 @@ class CrosshairsPage(QWidget):
     ) -> None:
         super().__init__()
         self._definitions = definitions
+        self._accent_color = "#A923E2"
         self._active_style_id = current_style_id
         self._selected_style_id = current_style_id
         self._multi_select_mode = False
@@ -284,11 +285,10 @@ class CrosshairsPage(QWidget):
         self._populate_gallery()
 
     def _matches_folder(self, item: CrosshairDefinition) -> bool:
-        if self._quick_view == "my":
-            if item.is_favorite:
-                return True
-            if item.source_type in {"custom", "creator_grid", "imported_pack", "plugin_pack", "legacy_pack"}:
-                return True
+        if self._quick_view == "my" and not (
+            item.is_favorite
+            or item.source_type in {"custom", "creator_grid", "imported_pack", "plugin_pack", "legacy_pack"}
+        ):
             return False
         if self._folder_id == "all":
             return True
@@ -367,6 +367,7 @@ class CrosshairsPage(QWidget):
         for _ in range(min(batch_size, len(self._pending_tiles))):
             index, definition, columns, tile_width = self._pending_tiles.pop(0)
             tile = CrosshairCardButton(definition, parent=self)
+            tile.set_accent_color(self._accent_color)
             tile.setFixedSize(tile_width, CrosshairCardButton.CARD_HEIGHT)
             tile.clicked.connect(lambda _checked=False, sid=definition.style_id: self._on_tile_clicked(sid))
             tile.favorite_clicked.connect(self.favorite_toggled.emit)
@@ -396,9 +397,22 @@ class CrosshairsPage(QWidget):
         self._refresh_tile_states()
         self._refresh_side_panel()
 
+    def set_previewed_style(self, style_id: str) -> None:
+        if style_id in self._definitions:
+            self._selected_style_id = style_id
+            self._refresh_tile_states()
+            self._refresh_side_panel()
+
     def set_selected_size(self, value: int) -> None:
+        self._size_slider.blockSignals(True)
         self._size_slider.setValue(max(50, min(200, value)))
+        self._size_slider.blockSignals(False)
         self._size_value.setText(f"{self._size_slider.value()}%")
+
+    def set_accent_color(self, color_hex: str) -> None:
+        self._accent_color = color_hex
+        for tile in self._tile_buttons.values():
+            tile.set_accent_color(color_hex)
 
     def set_quick_view(self, view: str) -> None:
         view = (view or "all").strip().lower()
@@ -566,7 +580,7 @@ class CrosshairsPage(QWidget):
         if path:
             if not path.lower().endswith(".xhair"):
                 path = f"{path}.xhair"
-            self.export_pack_requested.emit(path)
+            self.export_pack_requested.emit(current, path)
 
     def _on_open_detail(self, *_args) -> None:
         if self._selected_style_id:

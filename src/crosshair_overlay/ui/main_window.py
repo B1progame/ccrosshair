@@ -1,10 +1,10 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from collections import OrderedDict
 from pathlib import Path
 
 from PySide6.QtCore import QEasingCurve, QPropertyAnimation, Signal
-from PySide6.QtGui import QIcon
+from PySide6.QtGui import QIcon, QKeySequence, QShortcut
 from PySide6.QtWidgets import QFrame, QGraphicsOpacityEffect, QHBoxLayout, QStackedWidget, QVBoxLayout, QWidget
 
 from ..core import AnimationManager
@@ -20,6 +20,7 @@ from .pages.export_page import ExportPage
 from .pages.games_page import GameRowModel, GamesPage
 from .pages.home_page import HomePage
 from .pages.settings_page import SettingsPage
+from .react_surface import ReactSurface
 from .sidebar import Sidebar
 
 
@@ -79,6 +80,12 @@ class MainWindow(QWidget):
         sidebar_collapsed: bool,
     ) -> None:
         super().__init__()
+        self._definitions = definitions
+        self._active_style_id = current_style_id
+        self._overlay_status = False
+        self._theme_mode = theme_mode
+        self._resolved_theme = theme_mode if theme_mode in {"dark", "light"} else "dark"
+        self._accent_color = accent_color
         style_names = [(item.style_id, item.display_name) for item in definitions.values()]
         self._home_page = HomePage(style_names=style_names, current_style_id=current_style_id)
         self._crosshairs_page = CrosshairsPage(
@@ -103,6 +110,10 @@ class MainWindow(QWidget):
         self._about_page = AboutPage()
         self._sidebar = Sidebar()
         self._stack = QStackedWidget(self)
+        self._surface_stack = QStackedWidget(self)
+        self._web_loaded = False
+        self._web_selected_id = current_style_id
+        self._web_revision = 0
         self._animation_manager = AnimationManager(self)
         self._page_map: dict[str, QWidget] = {}
         self._current_page_id = "home"
@@ -145,11 +156,19 @@ class MainWindow(QWidget):
         content_layout = QVBoxLayout()
         content_layout.setContentsMargins(0, 0, 0, 0)
         content_layout.addWidget(self._stack)
+        self._web_index = -1
+        self._surface_shortcut = QShortcut(QKeySequence("Ctrl+Shift+N"), self)
+        self._surface_shortcut.activated.connect(self._toggle_surface)
+        self._react_surface = ReactSurface(self)
+        self._react_surface.command_requested.connect(self._on_react_command)
+        self._react_surface.load_finished.connect(self._on_web_loaded)
         content_surface.setLayout(content_layout)
         shell_layout.addWidget(content_surface, 1)
         shell.setLayout(shell_layout)
-
-        root.addWidget(shell)
+        self._surface_stack.addWidget(shell)
+        self._surface_stack.setCurrentIndex(0)
+        self._web_index = self._surface_stack.addWidget(self._react_surface)
+        root.addWidget(self._surface_stack)
         self.setLayout(root)
 
         self._page_map = {
@@ -189,11 +208,11 @@ class MainWindow(QWidget):
         self._crosshairs_page.favorite_toggled.connect(self.style_favorite_toggled.emit)
         self._crosshairs_page.selected_size_changed.connect(self.selected_size_changed.emit)
         self._crosshairs_page.import_pack_requested.connect(self.import_pack_requested.emit)
-        self._crosshairs_page.export_pack_requested.connect(self.export_pack_requested.emit)
+        self._crosshairs_page.export_pack_requested.connect(self.style_export_requested.emit)
         self._crosshairs_page.export_selection_requested.connect(self.export_selection_requested.emit)
         self._export_page.export_requested.connect(self.export_pack_requested.emit)
 
-        self._detail_page.back_requested.connect(lambda: self.navigate_to("crosshairs"))
+        self._detail_page.back_requested.connect(self._return_from_detail)
         self._detail_page.activate_requested.connect(self.style_selected.emit)
         self._detail_page.live_style_changed.connect(self.style_live_updated.emit)
         self._detail_page.save_variant_requested.connect(self.style_variant_save_requested.emit)
@@ -222,6 +241,8 @@ class MainWindow(QWidget):
         self._sidebar_animation.valueChanged.connect(self._on_sidebar_width_changed)
 
     def navigate_to(self, page_id: str) -> None:
+        if self._surface_stack.currentIndex() != 0:
+            self._surface_stack.setCurrentIndex(0)
         if page_id not in self._page_map:
             return
         if page_id == "my_crosshairs":
@@ -235,14 +256,137 @@ class MainWindow(QWidget):
         if page_id != "crosshair_detail":
             self._sidebar.set_selected(page_id)
         else:
-            self._sidebar.set_selected("crosshairs")
+            self._sidebar.set_selected(getattr(self, "_detail_return_page", "crosshairs"))
 
     def _on_detail_requested(self, style_id: str) -> None:
+        self._detail_return_page = self._current_page_id if self._current_page_id in {"crosshairs", "my_crosshairs"} else "crosshairs"
         self.style_detail_requested.emit(style_id)
         self.navigate_to("crosshair_detail")
 
+    def _return_from_detail(self) -> None:
+        self.navigate_to(getattr(self, "_detail_return_page", "crosshairs"))
+
     def set_detail_definition(self, definition: CrosshairDefinition) -> None:
         self._detail_page.set_definition(definition)
+        self._publish_web_state()
+
+    def show_react_surface(self) -> bool:
+        if self._web_index < 0:
+            return False
+        self._surface_stack.setCurrentIndex(self._web_index)
+        self._set_web_lifecycle(active=self.isVisible())
+        self._publish_web_state()
+        return True
+
+    def show_native_surface(self) -> None:
+        self._surface_stack.setCurrentIndex(0)
+        self._set_web_lifecycle(active=False)
+
+    def _set_web_lifecycle(self, active: bool) -> None:
+        if self._web_index < 0 or not self._web_loaded:
+            return
+        try:
+            self._react_surface.set_active(active)
+        except RuntimeError:
+            pass
+
+    def _toggle_surface(self) -> None:
+        if self._web_index >= 0:
+            if self._surface_stack.currentIndex() == self._web_index:
+                self.show_native_surface()
+            else:
+                self.show_react_surface()
+
+    def _on_web_loaded(self, ok: bool) -> None:
+        if ok:
+            self._web_loaded = True
+            self.show_react_surface()
+        else:
+            self.show_native_surface()
+
+    def _web_snapshot(self) -> dict:
+        self._web_revision += 1
+        return {"version": 1, "revision": self._web_revision, "theme": self._theme_mode, "resolvedTheme": self._resolved_theme, "accent": self._accent_color,
+                "overlay": self._overlay_status, "activeId": self._active_style_id,
+                "selectedId": self._web_selected_id, "styles": [self._style_payload(item) for item in self._definitions.values()]}
+
+    def _style_payload(self, item: CrosshairDefinition) -> dict:
+        s = item.style
+        rgba = getattr(s, "color_rgba", (255, 255, 255, 255))
+        return {"id": item.style_id, "name": item.display_name, "family": item.family,
+                "source": item.source_type, "tags": list(item.tags), "favorite": item.is_favorite,
+                "color": "#%02x%02x%02x" % tuple(rgba[:3]), "opacity": int(rgba[3]) if len(rgba) > 3 else 255,
+                "shape": str(getattr(s.shape, "value", s.shape)), "dot": bool(s.center_dot),
+                "active": item.style_id == self._active_style_id, "armLength": s.arm_length,
+                "gap": s.gap, "thickness": s.thickness, "circleRadius": s.circle_radius, "tStyle": s.t_style}
+
+    def _publish_web_event(self, snapshot: dict | None = None) -> None:
+        self._react_surface.publish(snapshot or self._publish_web_state())
+
+    def _on_react_command(self, command: str, payload: object, request_id: str) -> None:
+        try:
+            if not isinstance(payload, dict):
+                raise ValueError("Command payload must be an object")
+            result = self._handle_web_command(command, payload)
+            self._react_surface.complete(request_id, result)
+        except Exception as exc:
+            self._react_surface.complete(request_id, error=str(exc))
+
+    def _handle_web_command(self, command: str, payload: dict) -> object:
+        fields = {
+            "ready": set(), "selectStyle": {"styleId"}, "activateStyle": {"styleId"},
+            "toggleFavorite": {"styleId"}, "openDetail": {"styleId"},
+            "setOverlay": {"enabled"}, "navigate": {"page"}, "toggleNative": set(),
+            "setTheme": {"theme"},
+        }
+        if command not in fields or set(payload) != fields[command]:
+            raise ValueError("Invalid command or payload")
+        if command == "ready": return self._publish_web_state()
+        if command in {"selectStyle", "activateStyle", "toggleFavorite", "openDetail"}:
+            style_id = payload.get("styleId")
+            if not isinstance(style_id, str) or style_id not in self._definitions:
+                raise ValueError("Unknown crosshair style")
+            self._web_selected_id = style_id
+            if command == "selectStyle":
+                self._crosshairs_page.set_previewed_style(style_id)
+            elif command == "activateStyle": self.style_selected.emit(style_id)
+            elif command == "toggleFavorite": self.style_favorite_toggled.emit(style_id)
+            else:
+                self._on_detail_requested(style_id)
+            self._publish_web_event()
+            return {"accepted": True}
+        if command == "setOverlay":
+            enabled = payload.get("enabled")
+            if not isinstance(enabled, bool): raise ValueError("enabled must be a boolean")
+            (self.enable_overlay_requested if enabled else self.disable_overlay_requested).emit()
+            return {"accepted": True}
+        if command == "navigate":
+            routes = {"home":"home", "library":"crosshairs", "my_crosshairs":"my_crosshairs", "creator":"creator", "games":"games", "settings":"settings"}
+            target = payload.get("page")
+            if target not in routes: raise ValueError("Unsupported page")
+            if target in {"library", "my_crosshairs"}:
+                if self._web_index >= 0:
+                    self._surface_stack.setCurrentIndex(self._web_index)
+            else:
+                self.show_native_surface()
+                self.navigate_to(routes[target])
+            return {"accepted": True}
+        if command == "toggleNative":
+            self.show_native_surface()
+            return {"accepted": True}
+        if command == "setTheme":
+            theme = payload.get("theme")
+            if theme not in {"light", "dark", "system"}: raise ValueError("Unsupported theme")
+            self.theme_mode_changed.emit(theme)
+            return {"accepted": True}
+        raise ValueError("Unsupported command")
+
+    def _publish_web_state(self) -> dict:
+        return self._web_snapshot()
+
+    def _update_web_definitions(self, definitions: "OrderedDict[str, CrosshairDefinition]") -> None:
+        self._definitions = definitions
+        self._publish_web_event()
 
     def toggle_sidebar(self) -> None:
         self._apply_sidebar_state(not self._sidebar.collapsed, animate=True)
@@ -275,16 +419,24 @@ class MainWindow(QWidget):
         self._page_fade = self._animation_manager.fade_in(page)
 
     def refresh_definitions(self, definitions: "OrderedDict[str, CrosshairDefinition]", selected_style_id: str) -> None:
+        self._definitions = definitions
+        self._web_selected_id = selected_style_id
         style_names = [(item.style_id, item.display_name) for item in definitions.values()]
         self._home_page.refresh_styles(style_names=style_names, selected_style_id=selected_style_id)
         self._crosshairs_page.refresh_definitions(definitions=definitions, selected_style_id=selected_style_id)
+        self._publish_web_event()
 
     def set_overlay_status(self, enabled: bool) -> None:
+        self._overlay_status = bool(enabled)
         self._home_page.set_overlay_status(enabled)
+        self._publish_web_event()
 
     def set_selected_style(self, style_id: str) -> None:
+        self._active_style_id = style_id
+        self._web_selected_id = style_id
         self._home_page.set_selected_style(style_id)
         self._crosshairs_page.set_selected_style(style_id)
+        self._publish_web_event()
 
     def set_selected_style_name(self, style_name: str) -> None:
         self._home_page.set_selected_style_name(style_name)
@@ -296,9 +448,15 @@ class MainWindow(QWidget):
     def set_selected_size(self, value: int) -> None:
         self._crosshairs_page.set_selected_size(value)
 
-    def set_theme_values(self, theme_mode: str, accent_color: str) -> None:
+    def set_theme_values(self, theme_mode: str, accent_color: str, resolved_theme: str | None = None) -> None:
+        self._theme_mode = theme_mode
+        if resolved_theme in {"dark", "light"}:
+            self._resolved_theme = resolved_theme
+        self._accent_color = accent_color
         self._sidebar.set_theme_mode(theme_mode)
         self._settings_page.set_theme(theme_mode=theme_mode, accent_color=accent_color)
+        self._crosshairs_page.set_accent_color(accent_color)
+        self._publish_web_event()
 
     def set_global_size(self, value: int) -> None:
         self._settings_page.set_global_size(value)
@@ -356,6 +514,14 @@ class MainWindow(QWidget):
             return
         self.close_to_tray_requested.emit()
         event.ignore()
+
+    def hideEvent(self, event) -> None:  # noqa: N802
+        self._set_web_lifecycle(active=False)
+        super().hideEvent(event)
+
+    def showEvent(self, event) -> None:  # noqa: N802
+        super().showEvent(event)
+        self._set_web_lifecycle(active=self._surface_stack.currentIndex() == self._web_index)
 
     def allow_close_once(self) -> None:
         self._allow_close_once = True

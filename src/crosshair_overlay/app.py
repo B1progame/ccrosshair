@@ -47,6 +47,7 @@ from .windows_runtime import (
     running_process_names,
 )
 from .ui.main_window import MainWindow
+from .ui.react_surface import register_react_scheme
 from .ui.pages.games_page import GameRowModel
 
 try:
@@ -612,7 +613,7 @@ class AppController(QObject):
         self._main_window.set_active_style_preview(self._definitions[self._current_style_id])
         self._main_window.set_selected_size(self._settings.selected_size_percent)
         self._main_window.set_global_size(self._settings.global_size_percent)
-        self._main_window.set_theme_values(self._settings.theme_mode, self._settings.accent_color)
+        self._main_window.set_theme_values(self._settings.theme_mode, self._settings.accent_color, self._theme_manager.resolved_mode.value)
         self._main_window.set_beta_page_visible(self._settings.beta_zoom.sidebar_enabled)
         self._main_window.set_beta_zoom_settings(self._settings.beta_zoom)
         self._refresh_beta_monitor_choices()
@@ -1443,7 +1444,7 @@ class AppController(QObject):
 
     def _apply_theme(self) -> None:
         self._theme_manager.apply(theme_mode=self._settings.theme_mode, accent_hex=self._settings.accent_color)
-        self._main_window.set_theme_values(self._settings.theme_mode, self._settings.accent_color)
+        self._main_window.set_theme_values(self._settings.theme_mode, self._settings.accent_color, self._theme_manager.resolved_mode.value)
         self._main_window.set_beta_page_visible(self._settings.beta_zoom.sidebar_enabled)
 
     def _save_settings(self) -> None:
@@ -1489,6 +1490,7 @@ def run() -> int:
         except Exception:
             pass
 
+    register_react_scheme()
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
     logo_path = Path(__file__).resolve().parent / "assets" / "logo.svg"

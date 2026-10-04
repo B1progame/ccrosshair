@@ -44,6 +44,11 @@ class SettingsPage(QWidget):
         self._accent_input = QLineEdit(self)
         self._pick_color_button = QPushButton("Choose Color", self)
         self._accent_swatch = QLabel(self)
+        self._accent_error = QLabel(self)
+        self._accent_error.setObjectName("ValidationMessage")
+        self._accent_error.setAccessibleName("Accent color validation message")
+        self._accent_error.hide()
+        self._last_valid_accent = "#A923E2"
         self._global_size_slider = QSlider(Qt.Orientation.Horizontal, self)
         self._global_size_label = QLabel(self)
         self._storage_path_input = QLineEdit(storage_path, self)
@@ -95,14 +100,15 @@ class SettingsPage(QWidget):
         accent_wrap = QWidget(self)
         accent_wrap.setLayout(accent_row)
         appearance_layout.addWidget(accent_wrap, 1, 0, 1, 2)
-        appearance_layout.addWidget(QLabel("Global Crosshair Size", self), 2, 0, 1, 2)
+        appearance_layout.addWidget(self._accent_error, 2, 0, 1, 2)
+        appearance_layout.addWidget(QLabel("Global Crosshair Size", self), 3, 0, 1, 2)
         size_row = QHBoxLayout()
         self._global_size_slider.setRange(50, 200)
         size_row.addWidget(self._global_size_slider)
         size_row.addWidget(self._global_size_label)
         size_wrap = QWidget(self)
         size_wrap.setLayout(size_row)
-        appearance_layout.addWidget(size_wrap, 3, 0, 1, 2)
+        appearance_layout.addWidget(size_wrap, 4, 0, 1, 2)
         appearance.setLayout(appearance_layout)
         root.addWidget(appearance)
 
@@ -152,8 +158,10 @@ class SettingsPage(QWidget):
         auto_update_on_startup: bool,
         run_on_startup_tray: bool,
     ) -> None:
-        self._accent_input.setText(accent_color.upper())
-        self._update_accent_swatch(accent_color.upper())
+        color = QColor(accent_color)
+        self._last_valid_accent = color.name().upper() if color.isValid() else "#A923E2"
+        self._accent_input.setText(self._last_valid_accent)
+        self._update_accent_swatch(self._last_valid_accent)
         self._global_size_slider.setValue(max(50, min(200, global_size)))
         self._global_size_label.setText(f"{self._global_size_slider.value()}%")
         self._storage_path_input.setText(storage_path)
@@ -181,7 +189,10 @@ class SettingsPage(QWidget):
         self._update_accent_swatch(accent_color.upper())
 
     def set_global_size(self, value: int) -> None:
+        self._global_size_slider.blockSignals(True)
         self._global_size_slider.setValue(value)
+        self._global_size_slider.blockSignals(False)
+        self._global_size_label.setText(f"{self._global_size_slider.value()}%")
 
     def set_beta_features_enabled(self, enabled: bool) -> None:
         self._beta_checkbox.blockSignals(True)
@@ -205,18 +216,30 @@ class SettingsPage(QWidget):
         raw = self._accent_input.text().strip()
         color = QColor(raw)
         if not color.isValid():
-            color = QColor("#A923E2")
+            self._accent_error.setText("Enter a valid color, such as #67D4AE.")
+            self._accent_error.show()
+            self._accent_input.setProperty("invalid", True)
+            self._accent_input.style().unpolish(self._accent_input)
+            self._accent_input.style().polish(self._accent_input)
+            return
         normalized = color.name().upper()
+        self._last_valid_accent = normalized
         self._accent_input.setText(normalized)
+        self._accent_error.hide()
+        self._accent_input.setProperty("invalid", False)
+        self._accent_input.style().unpolish(self._accent_input)
+        self._accent_input.style().polish(self._accent_input)
         self._update_accent_swatch(normalized)
         self.accent_color_changed.emit(normalized)
 
     def _on_pick_color(self) -> None:
-        current = QColor(self._accent_input.text().strip())
-        color = QColorDialog.getColor(current if current.isValid() else QColor("#A923E2"), self, "Pick Accent Color")
+        color = QColorDialog.getColor(QColor(self._last_valid_accent), self, "Pick Accent Color")
         if color.isValid():
             normalized = color.name().upper()
             self._accent_input.setText(normalized)
+            self._last_valid_accent = normalized
+            self._accent_error.hide()
+            self._accent_input.setProperty("invalid", False)
             self._update_accent_swatch(normalized)
             self.accent_color_changed.emit(normalized)
 

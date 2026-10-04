@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from collections import OrderedDict
 from collections.abc import Callable
 
 from PySide6.QtCore import QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QPainter, QPen, QPixmap
+from PySide6.QtGui import QColor, QPainter, QPen, QPixmap, QPalette
 from PySide6.QtWidgets import QPushButton, QSizePolicy, QToolButton, QWidget
 
 from ..crosshairs.models import CrosshairDefinition
@@ -12,7 +13,8 @@ from ..overlay_renderer import draw_overlay_style
 
 class CrosshairCardButton(QToolButton):
     favorite_clicked = Signal(str)
-    _preview_cache: dict[tuple[str, int, int, int], QPixmap] = {}
+    _preview_cache: OrderedDict[tuple[str, int, int, int, int], QPixmap] = OrderedDict()
+    _preview_cache_limit = 256
     _render_version = 3
     CARD_HEIGHT = 186
 
@@ -27,7 +29,10 @@ class CrosshairCardButton(QToolButton):
         self._state_selected = False
         self._state_active = False
         self._state_batch = False
+        self._accent_color = ""
         self._cache_key_builder = cache_key_builder or (lambda item: item.style_id)
+        self.setAccessibleName(definition.display_name)
+        self.setToolTip(definition.display_name)
         self._favorite_button = QPushButton(self)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setCheckable(False)
@@ -35,6 +40,9 @@ class CrosshairCardButton(QToolButton):
         self.setMaximumHeight(self.CARD_HEIGHT)
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self._favorite_button.setFixedSize(28, 28)
+        self._favorite_button.setMinimumSize(28, 28)
+        self._favorite_button.setObjectName("CardFavoriteButton")
+        self._favorite_button.setAccessibleName("Toggle favorite")
         self._favorite_button.clicked.connect(self._emit_favorite)
         self._refresh_favorite()
 
@@ -47,6 +55,8 @@ class CrosshairCardButton(QToolButton):
 
     def sync_definition(self, definition: CrosshairDefinition) -> None:
         self.definition = definition
+        self.setAccessibleName(definition.display_name)
+        self.setToolTip(definition.display_name)
         self._refresh_favorite()
         self.update()
 
@@ -77,17 +87,22 @@ class CrosshairCardButton(QToolButton):
             preview_bg = QColor("#101925")
             family_text_color = QColor("#94A6C3")
 
-        if self._state_batch:
-            background = QColor("#20324A")
-            border = QColor("#69B4FF")
-        elif self._state_selected:
-            background = QColor("#243145")
-            border = QColor("#6FD4C9")
+        accent = QColor(self._accent_color) if QColor(self._accent_color).isValid() else self.palette().color(QPalette.ColorRole.Highlight)
+        if self._state_batch or self._state_selected:
+            background = self._mix(panel, accent, 0.13 if self._state_batch else 0.09)
+            border = accent
         if self._state_active:
-            border = QColor("#59D39A")
+            border = QColor("#36B37E") if is_light else QColor("#54D69A")
         painter.setPen(QPen(border, 2))
         painter.setBrush(background)
         painter.drawRoundedRect(outer, 14, 14)
+        if self._state_batch:
+            painter.setPen(QPen(accent, 2))
+            painter.drawEllipse(outer.right() - 18, outer.top() + 8, 10, 10)
+        if self._state_active:
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor("#36B37E") if is_light else QColor("#54D69A"))
+            painter.drawRoundedRect(QRectF(outer.left() + 10, outer.top() + 10, 6, 6), 3, 3)
 
         preview = QRectF(outer.left() + 12, outer.top() + 12, outer.width() - 24, outer.height() - 66)
         pixmap = self._preview_pixmap(int(preview.width()), int(preview.height()))
@@ -108,17 +123,23 @@ class CrosshairCardButton(QToolButton):
         painter.drawText(family_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, family_text)
 
     def _preview_pixmap(self, width: int, height: int) -> QPixmap:
-        key = (self._cache_key_builder(self.definition), max(1, width), max(1, height), self._render_version)
+        dpr = max(1.0, self.devicePixelRatioF())
+        ratio = int(round(dpr * 100))
+        key = (self._cache_key_builder(self.definition) + repr(self.definition.style), max(1, width), max(1, height), ratio, self._render_version)
         pixmap = self._preview_cache.get(key)
         if pixmap is not None:
+            self._preview_cache.move_to_end(key)
             return pixmap
-        pixmap = QPixmap(key[1], key[2])
+        pixmap = QPixmap(max(1, round(key[1] * dpr)), max(1, round(key[2] * dpr)))
+        pixmap.setDevicePixelRatio(dpr)
         pixmap.fill(Qt.GlobalColor.transparent)
         painter = QPainter(pixmap)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         draw_overlay_style(painter, QRectF(0, 0, key[1], key[2]), self.definition.style.scaled(210))
         painter.end()
         self._preview_cache[key] = pixmap
+        if len(self._preview_cache) > self._preview_cache_limit:
+            self._preview_cache.popitem(last=False)
         return pixmap
 
     def _refresh_favorite(self) -> None:
@@ -128,6 +149,11 @@ class CrosshairCardButton(QToolButton):
         self._favorite_button.style().unpolish(self._favorite_button)
         self._favorite_button.style().polish(self._favorite_button)
         self._favorite_button.raise_()
+
+    def set_accent_color(self, color_hex: str) -> None:
+        if QColor(color_hex).isValid():
+            self._accent_color = QColor(color_hex).name()
+            self.update()
 
     def _emit_favorite(self) -> None:
         self.favorite_clicked.emit(self.definition.style_id)

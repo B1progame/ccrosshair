@@ -1,4 +1,7 @@
 .venv/
+node_modules/
+**/node_modules/
+*.tsbuildinfo
 __pycache__/
 *.pyc
 *.spec

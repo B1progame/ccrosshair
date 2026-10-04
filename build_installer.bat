@@ -22,6 +22,18 @@ if not exist "%PYTHON%" (
 call setup.bat
 if errorlevel 1 goto :error
 
+where npm >nul 2>nul
+if errorlevel 1 (
+    echo [build] Node.js/npm is required to build the React control UI.
+    goto :error
+)
+echo [build] Installing locked frontend build dependencies...
+call npm ci --prefix frontend
+if errorlevel 1 goto :error
+echo [build] Building current offline React bundle...
+call npm run --prefix frontend build
+if errorlevel 1 goto :error
+
 echo [build] Installing build requirements...
 "%PYTHON%" -m pip install -r requirements-build.txt
 if errorlevel 1 goto :error
@@ -39,10 +51,14 @@ if errorlevel 1 (
 )
 
 echo [build] Building portable app with PyInstaller...
+if not exist "src\crosshair_overlay\webui\dist\index.html" (
+    echo [build] React bundle missing. Build it with: npm ci --prefix frontend ^&^& npm run --prefix frontend build
+    goto :error
+)
 if "%ICON_READY%"=="1" (
-    "%PYTHON%" -m PyInstaller --noconfirm --clean --onedir --windowed --name CrosshairOverlay --paths "%ROOT%\src" --collect-submodules crosshair_overlay --add-data "src\crosshair_overlay\assets;crosshair_overlay\assets" --add-data "src\crosshair_overlay\version.txt;crosshair_overlay" --icon "%ICON_OUTPUT%" main.py
+    "%PYTHON%" -m PyInstaller --noconfirm --clean --onedir --windowed --name CrosshairOverlay --paths "%ROOT%\src" --collect-submodules crosshair_overlay --add-data "src\crosshair_overlay\assets;crosshair_overlay\assets" --add-data "src\crosshair_overlay\version.txt;crosshair_overlay" --add-data "src\crosshair_overlay\webui\dist;crosshair_overlay\webui\dist" --icon "%ICON_OUTPUT%" main.py
 ) else (
-    "%PYTHON%" -m PyInstaller --noconfirm --clean --onedir --windowed --name CrosshairOverlay --paths "%ROOT%\src" --collect-submodules crosshair_overlay --add-data "src\crosshair_overlay\assets;crosshair_overlay\assets" --add-data "src\crosshair_overlay\version.txt;crosshair_overlay" main.py
+    "%PYTHON%" -m PyInstaller --noconfirm --clean --onedir --windowed --name CrosshairOverlay --paths "%ROOT%\src" --collect-submodules crosshair_overlay --add-data "src\crosshair_overlay\assets;crosshair_overlay\assets" --add-data "src\crosshair_overlay\version.txt;crosshair_overlay" --add-data "src\crosshair_overlay\webui\dist;crosshair_overlay\webui\dist" main.py
 )
 if errorlevel 1 goto :error
 

@@ -112,12 +112,9 @@ class ChevronButton(QAbstractButton):
         self._animation.setEasingCurve(QEasingCurve.Type.InOutCubic)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setToolTip("Collapse / Expand")
+        self.setAccessibleName("Collapse or expand sidebar")
         self.setFixedSize(28, 28)
-
-    def mouseReleaseEvent(self, event) -> None:  # noqa: N802
-        if event.button() == Qt.MouseButton.LeftButton:
-            self.toggled_requested.emit()
-        super().mouseReleaseEvent(event)
+        self.clicked.connect(self.toggled_requested.emit)
 
     def paintEvent(self, event) -> None:  # noqa: N802
         del event

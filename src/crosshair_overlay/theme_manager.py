@@ -34,9 +34,11 @@ class ThemePalette:
 class ThemeManager:
     def __init__(self, app: QApplication) -> None:
         self._app = app
+        self.resolved_mode = ThemeMode.DARK
 
     def apply(self, theme_mode: str, accent_hex: str) -> None:
         resolved_mode = self._resolve_mode(theme_mode)
+        self.resolved_mode = resolved_mode
         accent = self._normalize_color(accent_hex, "#A923E2")
         palette = self._build_palette(resolved_mode=resolved_mode, accent=accent)
         self._app.setStyleSheet(self._build_stylesheet(palette))
@@ -73,7 +75,7 @@ class ThemeManager:
                 selected_strong=self._mix(accent, "#FFFFFF", 0.22),
                 accent=accent,
                 accent_soft=self._mix(accent, "#FFFFFF", 0.16),
-                accent_text="#FFFFFF",
+                accent_text=self._contrast_text(accent),
                 success="#12A36D",
                 warning="#C77D13",
                 danger="#D9485F",
@@ -92,7 +94,7 @@ class ThemeManager:
             selected_strong=self._mix(accent, "#151C27", 0.3),
             accent=accent,
             accent_soft=self._mix(accent, "#141B26", 0.25),
-            accent_text="#FFFFFF",
+            accent_text=self._contrast_text(accent),
             success="#27C07D",
             warning="#F0A43A",
             danger="#F06C7E",
@@ -325,6 +327,12 @@ class ThemeManager:
         QComboBox:focus, QLineEdit:focus, QSpinBox:focus, QTextEdit:focus, QKeySequenceEdit:focus {{
             border-color: {self._mix(p.accent, p.border_strong, 0.72)};
         }}
+        QPushButton#CardFavoriteButton {{
+            min-width: 28px; max-width: 28px; min-height: 28px; max-height: 28px;
+            padding: 0; border-radius: 7px; font-size: 14px;
+        }}
+        QLabel#ValidationMessage {{ color: {p.danger}; font-size: 11px; }}
+        QLineEdit[invalid="true"] {{ border-color: {p.danger}; }}
         QComboBox::drop-down {{
             width: 28px;
             border: none;
@@ -445,3 +453,14 @@ class ThemeManager:
         g = int(round((fg.green() * weight) + (bg.green() * (1.0 - weight))))
         b = int(round((fg.blue() * weight) + (bg.blue() * (1.0 - weight))))
         return QColor(r, g, b).name().upper()
+
+    @staticmethod
+    def _contrast_text(accent: str) -> str:
+        color = QColor(accent)
+
+        def linear(component: int) -> float:
+            value = component / 255.0
+            return value / 12.92 if value <= 0.04045 else ((value + 0.055) / 1.055) ** 2.4
+
+        luminance = 0.2126 * linear(color.red()) + 0.7152 * linear(color.green()) + 0.0722 * linear(color.blue())
+        return "#111615" if luminance > 0.42 else "#FFFFFF"
