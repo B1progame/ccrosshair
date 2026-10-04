@@ -19,10 +19,12 @@ from PySide6.QtTest import QSignalSpy, QTest
 from PySide6.QtWidgets import QApplication
 
 from crosshair_overlay.config import OverlayStyle
-from crosshair_overlay.app import AppController
+from crosshair_overlay.app import AppController, _WorkerReaper
+from crosshair_overlay.app_settings import AppSettings
 from crosshair_overlay.creator.models import CreatorCrosshair
 from crosshair_overlay.crosshairs.catalog import build_builtin_catalog
 from crosshair_overlay.crosshairs.io import save_xhair
+from crosshair_overlay.crosshairs import CrosshairLibrary
 from crosshair_overlay.storage_paths import StoragePaths
 from crosshair_overlay.theme_manager import ThemeManager
 from crosshair_overlay.ui.bridge_router import BridgeCommandRouter
@@ -147,6 +149,82 @@ class UiRegressionTests(unittest.TestCase):
         model.style_id = "creator_test"
         self.assertEqual(controller._creator_style_id(model, model.name), "creator_test")
 
+    def test_creator_save_returns_assigned_id_and_repeat_save_updates_same_file(self) -> None:
+        class WindowHarness:
+            creator_model = None
+
+            def refresh_definitions(self, definitions, selected_style_id):
+                self.definitions = definitions
+                self.selected_style_id = selected_style_id
+
+            def set_creator_model(self, model):
+                self.creator_model = model
+
+        class ControllerHarness:
+            save_creator_crosshair = AppController.save_creator_crosshair
+            _creator_style_id = AppController._creator_style_id
+            _next_available_style_id = AppController._next_available_style_id
+            _slugify = AppController._slugify
+            _hydrate_favorites = AppController._hydrate_favorites
+
+            def __init__(self, storage: Path) -> None:
+                self._definitions = build_builtin_catalog()
+                self._library = CrosshairLibrary()
+                self._storage_paths = StoragePaths(storage)
+                self._storage_paths.ensure()
+                self._settings = AppSettings(crosshair_storage_path=str(storage))
+                self._main_window = WindowHarness()
+
+            def _refresh_games_page(self):
+                pass
+
+        with tempfile.TemporaryDirectory() as tmp, \
+                patch("crosshair_overlay.app.QMessageBox.information"), \
+                patch("crosshair_overlay.app.QMessageBox.warning") as warning:
+            controller = ControllerHarness(Path(tmp))
+            source = CreatorCrosshair("Classic Cross", 32, "#67D4AE", [(15, 15)])
+            controller.save_creator_crosshair(source, activate_now=False)
+            self.assertFalse(warning.called, warning.call_args)
+            saved = controller._main_window.creator_model
+            self.assertEqual(saved.style_id, "classic_cross_2")
+            destination = controller._storage_paths.creator_definition_path(saved.style_id)
+            self.assertTrue(destination.exists())
+
+            saved.name = "Renamed Creator Cross"
+            controller.save_creator_crosshair(saved, activate_now=False)
+            self.assertEqual(controller._main_window.creator_model.style_id, saved.style_id)
+            self.assertEqual(len([d for d in controller._definitions.values() if d.source_type == "creator_grid"]), 1)
+
+    def test_worker_reaper_preserves_64_bit_keys(self) -> None:
+        reaper = _WorkerReaper()
+        received: list[int] = []
+        reaper.released.connect(received.append)
+        key = (1 << 40) + 57
+        reaper.released.emit(key)
+        self.assertEqual(received, [key])
+
+    def test_startup_update_check_respects_user_preference(self) -> None:
+        class ControllerHarness:
+            _check_updates_on_startup = AppController._check_updates_on_startup
+            _handle_startup_update_result = AppController._handle_startup_update_result
+
+            def __init__(self, enabled: bool) -> None:
+                self._settings = AppSettings(auto_update_on_startup=enabled)
+                self._update_check_running = False
+                self._update_manager = object()
+                self.workers = []
+
+            def _start_worker(self, worker):
+                self.workers.append(worker)
+
+        disabled = ControllerHarness(False)
+        disabled._check_updates_on_startup()
+        self.assertEqual(disabled.workers, [])
+        enabled = ControllerHarness(True)
+        enabled._check_updates_on_startup()
+        self.assertEqual(len(enabled.workers), 1)
+
 
 if __name__ == "__main__":
     unittest.main()
+

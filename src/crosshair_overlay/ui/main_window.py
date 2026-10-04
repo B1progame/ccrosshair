@@ -503,6 +503,11 @@ class MainWindow(QWidget):
         self._publish_web_event()
         self.navigate_to("creator")
 
+    def set_creator_model(self, model: CreatorCrosshair) -> None:
+        self._creator_page.load_from_model(model)
+        self._creator_model = model.to_dict()
+        self._publish_web_event()
+
     def set_games_data(self, games: list[GameRowModel], style_items: list[tuple[str, str]]) -> None:
         self._games_data = list(games)
         self._style_names = list(style_items)
@@ -577,5 +582,6 @@ class MainWindow(QWidget):
 
     def allow_close_once(self) -> None:
         self._allow_close_once = True
+
 
 
