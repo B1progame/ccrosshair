@@ -10,7 +10,7 @@ import os
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QPoint, QRect, QSize, Qt, QTimer
+from PySide6.QtCore import QObject, QPoint, QRunnable, QRect, QSize, Qt, QThreadPool, QTimer, Signal
 from PySide6.QtGui import QAction, QIcon, QPixmap
 from PySide6.QtWidgets import QApplication, QMenu, QMessageBox, QProgressDialog, QSystemTrayIcon
 
@@ -53,6 +53,69 @@ try:
     import winreg
 except Exception:  # noqa: BLE001
     winreg = None
+
+
+class _WorkerSignals(QObject):
+    finished = Signal(object)
+    progress = Signal(int, int)
+
+
+class _ReleaseCheckWorker(QRunnable):
+    def __init__(self, update_manager: UpdateManager, timeout_s: float = 6.0) -> None:
+        super().__init__()
+        self.update_manager = update_manager
+        self.timeout_s = timeout_s
+        self.signals = _WorkerSignals()
+
+    def run(self) -> None:
+        try:
+            result = self.update_manager.fetch_latest_release(timeout_s=self.timeout_s)
+        except Exception as exc:  # a network failure must not freeze startup
+            result = exc
+        self.signals.finished.emit(result)
+
+
+class _DownloadUpdateWorker(QRunnable):
+    def __init__(self, update_manager: UpdateManager, release: ReleaseInfo) -> None:
+        super().__init__()
+        self.update_manager = update_manager
+        self.release = release
+        self.signals = _WorkerSignals()
+
+    def run(self) -> None:
+        try:
+            last_reported = 0
+
+            def report_progress(downloaded: int, total: int) -> None:
+                nonlocal last_reported
+                step = max(1_048_576, total // 100) if total else 1_048_576
+                if downloaded - last_reported >= step or (total and downloaded >= total):
+                    last_reported = downloaded
+                    self.signals.progress.emit(downloaded, total)
+
+            installer = self.update_manager.download_installer(
+                self.release,
+                progress_callback=report_progress,
+            )
+            self.update_manager.schedule_silent_update(installer)
+            result: object = installer
+        except Exception as exc:
+            result = exc
+        self.signals.finished.emit(result)
+
+
+class _GameScanWorker(QRunnable):
+    def __init__(self, generation: int) -> None:
+        super().__init__()
+        self.generation = generation
+        self.signals = _WorkerSignals()
+
+    def run(self) -> None:
+        try:
+            result: object = scan_game_libraries()
+        except Exception as exc:
+            result = exc
+        self.signals.finished.emit((self.generation, result))
 
 
 class AppController(QObject):
@@ -100,15 +163,26 @@ class AppController(QObject):
         self._last_game_monitor_bounds: tuple[int, int, int, int] | None = None
         self._last_game_window_bounds: tuple[int, int, int, int] | None = None
         self._discovered_games: list[DiscoveredGame] = []
+        self._game_scan_generation = 0
+        self._game_scan_running = False
+        self._game_scan_pending = False
         self._automation_timer = QTimer(self)
         self._automation_timer.setInterval(1100)
         self._automation_timer.timeout.connect(self._automation_tick)
         self._zoom_timer = QTimer(self)
         self._zoom_timer.setTimerType(Qt.TimerType.PreciseTimer)
-        self._zoom_timer.setInterval(8)
+        # 30 Hz keeps the hotkey responsive and caps expensive desktop captures
+        # at a useful preview rate (the previous 125 Hz rate was wasteful).
+        self._zoom_timer.setInterval(33)
         self._zoom_timer.timeout.connect(self._zoom_tick)
         self._zoom_hotkey = parse_hotkey(self._settings.beta_zoom.hotkey_sequence)
         self._zoom_showing = False
+        self._last_overlay_bounds: tuple[int, int, int, int] | None = None
+        self._last_runtime_status = ""
+        self._update_check_running = False
+        self._manual_update_progress: QProgressDialog | None = None
+        self._manual_update_options = (False, False)
+        self._download_progress: QProgressDialog | None = None
         self._tray_icon: QSystemTrayIcon | None = None
         self._tray_menu: QMenu | None = None
         self._is_quitting = False
@@ -165,9 +239,13 @@ class AppController(QObject):
             self._overlay.hide()
             self._main_window.set_overlay_status(False)
 
-        self._main_window.show()
-        self._main_window.raise_()
-        self._main_window.activateWindow()
+        should_start_hidden = self._start_to_tray and self._settings.run_on_startup_tray and self._tray_icon is not None
+        if should_start_hidden:
+            self._main_window.hide()
+        else:
+            self._main_window.show()
+            self._main_window.raise_()
+            self._main_window.activateWindow()
         self._main_window.set_selected_style(self._current_style_id)
         self._main_window.set_selected_style_name(self._definitions[self._current_style_id].display_name)
         self._main_window.set_active_style_preview(self._definitions[self._current_style_id])
@@ -232,13 +310,9 @@ class AppController(QObject):
                 self.show_main_window()
 
     def show_main_window(self) -> None:
-        should_start_hidden = self._start_to_tray and self._settings.run_on_startup_tray
-        if should_start_hidden:
-            self._main_window.hide()
-        else:
-            self._main_window.show()
-            self._main_window.raise_()
-            self._main_window.activateWindow()
+        self._main_window.show()
+        self._main_window.raise_()
+        self._main_window.activateWindow()
 
     def hide_main_window_to_tray(self) -> None:
         if not self._main_window.isVisible():
@@ -559,12 +633,19 @@ class AppController(QObject):
         self._save_settings()
 
     def _check_updates_on_startup(self) -> None:
-        try:
-            release = self._update_manager.fetch_latest_release(timeout_s=6.0)
-        except UpdateError:
+        if self._update_check_running:
+            return
+        self._update_check_running = True
+        worker = _ReleaseCheckWorker(self._update_manager)
+        worker.signals.finished.connect(self._handle_startup_update_result)
+        QThreadPool.globalInstance().start(worker)
+
+    def _handle_startup_update_result(self, result: object) -> None:
+        self._update_check_running = False
+        if isinstance(result, Exception) or not isinstance(result, ReleaseInfo):
             self._main_window.set_update_available(False)
             return
-
+        release = result
         update_available = self._update_manager.is_newer_than_current(release) and release.installer_asset is not None
         self._main_window.set_update_available(update_available)
         if not update_available:
@@ -605,15 +686,28 @@ class AppController(QObject):
         return f'"{pythonw}" "{main_file}" --tray-start'
 
     def check_for_updates(self, silent_if_latest: bool = False, silent_on_error: bool = False) -> None:
-        progress = self._indefinite_progress_dialog("Checking GitHub releases...")
-        try:
-            release = self._update_manager.fetch_latest_release()
-        except UpdateError as exc:
-            if not silent_on_error:
-                QMessageBox.warning(self._main_window, "Updates", str(exc))
+        if self._update_check_running:
             return
-        finally:
-            progress.close()
+        self._update_check_running = True
+        self._manual_update_options = (silent_if_latest, silent_on_error)
+        self._manual_update_progress = self._indefinite_progress_dialog("Checking GitHub releases...")
+        worker = _ReleaseCheckWorker(self._update_manager, timeout_s=8.0)
+        worker.signals.finished.connect(self._handle_manual_update_result)
+        QThreadPool.globalInstance().start(worker)
+
+    def _handle_manual_update_result(self, result: object) -> None:
+        self._update_check_running = False
+        if self._manual_update_progress is not None:
+            self._manual_update_progress.close()
+            self._manual_update_progress = None
+        silent_if_latest, silent_on_error = self._manual_update_options
+        if isinstance(result, Exception):
+            if not silent_on_error:
+                QMessageBox.warning(self._main_window, "Updates", str(result))
+            return
+        if not isinstance(result, ReleaseInfo):
+            return
+        release = result
 
         if not self._update_manager.is_newer_than_current(release):
             self._main_window.set_update_available(False)
@@ -680,20 +774,23 @@ class AppController(QObject):
         progress.setWindowModality(Qt.WindowModality.WindowModal)
         progress.setCancelButton(None)
         progress.show()
-        QApplication.processEvents()
+        self._download_progress = progress
+        worker = _DownloadUpdateWorker(self._update_manager, release)
+        worker.signals.progress.connect(self._handle_update_progress)
+        worker.signals.finished.connect(self._handle_update_download_result)
+        QThreadPool.globalInstance().start(worker)
 
-        try:
-            installer_path = self._update_manager.download_installer(
-                release,
-                progress_callback=lambda done, total: self._update_progress(progress, done, total),
-            )
-            self._update_manager.schedule_silent_update(installer_path)
-        except UpdateError as exc:
-            progress.close()
-            QMessageBox.warning(self._main_window, "Update Failed", str(exc))
+    def _handle_update_progress(self, downloaded: int, total: int) -> None:
+        if self._download_progress is not None:
+            self._update_progress(self._download_progress, downloaded, total)
+
+    def _handle_update_download_result(self, result: object) -> None:
+        if self._download_progress is not None:
+            self._download_progress.close()
+            self._download_progress = None
+        if isinstance(result, Exception):
+            QMessageBox.warning(self._main_window, "Update Failed", str(result))
             return
-
-        progress.close()
         QMessageBox.information(
             self._main_window,
             "Installing Update",
@@ -899,8 +996,26 @@ class AppController(QObject):
         self._refresh_games_page()
 
     def _reload_games(self) -> None:
-        self._discovered_games = scan_game_libraries()
-        self._sync_profiles_with_discovery()
+        if self._game_scan_running:
+            self._game_scan_pending = True
+            return
+        self._game_scan_running = True
+        self._game_scan_generation += 1
+        worker = _GameScanWorker(self._game_scan_generation)
+        worker.signals.finished.connect(self._handle_game_scan_result)
+        QThreadPool.globalInstance().start(worker)
+
+    def _handle_game_scan_result(self, payload: object) -> None:
+        self._game_scan_running = False
+        if isinstance(payload, tuple) and len(payload) == 2:
+            generation, result = payload
+            if generation == self._game_scan_generation and isinstance(result, list):
+                self._discovered_games = result
+                self._sync_profiles_with_discovery()
+                self._refresh_games_page()
+        if self._game_scan_pending:
+            self._game_scan_pending = False
+            self._reload_games()
 
     def _sync_profiles_with_discovery(self) -> None:
         profile_map = {profile.game_id: profile for profile in self._settings.game_profiles}
@@ -995,10 +1110,15 @@ class AppController(QObject):
         self._set_overlay_visible(should_show_overlay, persist=False)
 
         if self._overlay_visible:
-            if monitor_bounds is not None:
-                self._overlay.center_on_bounds(*monitor_bounds)
-            else:
-                self._overlay.center_on_primary_screen()
+            overlay_bounds = monitor_bounds
+            if overlay_bounds is None:
+                screen = self._app.primaryScreen()
+                if screen is not None:
+                    geometry = screen.geometry()
+                    overlay_bounds = (geometry.x(), geometry.y(), geometry.x() + geometry.width(), geometry.y() + geometry.height())
+            if overlay_bounds is not None and overlay_bounds != self._last_overlay_bounds:
+                self._overlay.center_on_bounds(*overlay_bounds)
+                self._last_overlay_bounds = overlay_bounds
 
         if self._settings.auto_switch_game_profiles and active_profile is not None:
             if active_profile.style_id in self._definitions:
@@ -1010,7 +1130,10 @@ class AppController(QObject):
             self._restore_manual_style_if_needed()
             self._active_game_profile_id = None
 
-        self._main_window.set_games_status(self._current_runtime_status())
+        runtime_status = self._current_runtime_status()
+        if runtime_status != self._last_runtime_status:
+            self._main_window.set_games_status(runtime_status)
+            self._last_runtime_status = runtime_status
 
     def _zoom_tick(self) -> None:
         show_preview = (
@@ -1288,6 +1411,7 @@ class AppController(QObject):
                 self._overlay.raise_()
             else:
                 self._overlay.hide()
+                self._last_overlay_bounds = None
             self._overlay_visible = visible
         if persist:
             self._settings.overlay_enabled = visible

@@ -51,8 +51,17 @@ class StoragePaths:
         return self.creator_dir / f"{slugify_name(style_id)}.chgrid"
 
     def create_import_bundle(self, label: str) -> Path:
-        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        target = self.imports_dir / f"{slugify_name(label)}_{stamp}"
-        target.mkdir(parents=True, exist_ok=True)
+        self.imports_dir.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        base = f"{slugify_name(label)}_{stamp}"
+        target = self.imports_dir / base
+        suffix = 2
+        while True:
+            try:
+                target.mkdir()
+                break
+            except FileExistsError:
+                target = self.imports_dir / f"{base}_{suffix}"
+                suffix += 1
         (target / "items").mkdir(parents=True, exist_ok=True)
         return target

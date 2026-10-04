@@ -138,14 +138,29 @@ class UpdateManager:
                         downloaded += len(chunk)
                         if progress_callback is not None:
                             progress_callback(downloaded, expected)
+            if expected and downloaded != expected:
+                raise UpdateError("The installer download was incomplete; please try again.")
+        except UpdateError:
+            temp_destination.unlink(missing_ok=True)
+            raise
         except urllib.error.HTTPError as exc:
+            temp_destination.unlink(missing_ok=True)
             raise UpdateError(f"GitHub returned HTTP {exc.code} while downloading the installer.") from exc
         except urllib.error.URLError as exc:
+            temp_destination.unlink(missing_ok=True)
             raise UpdateError("Could not download the installer from GitHub.") from exc
         except OSError as exc:
+            temp_destination.unlink(missing_ok=True)
             raise UpdateError("Could not save the downloaded installer locally.") from exc
+        except Exception as exc:
+            temp_destination.unlink(missing_ok=True)
+            raise UpdateError("The installer download was interrupted; please try again.") from exc
 
-        temp_destination.replace(destination)
+        try:
+            temp_destination.replace(destination)
+        except OSError as exc:
+            temp_destination.unlink(missing_ok=True)
+            raise UpdateError("Could not finalize the downloaded installer.") from exc
         return destination
 
     def schedule_silent_update(self, installer_path: Path) -> None:
