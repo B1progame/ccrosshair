@@ -224,6 +224,8 @@ class MainWindow(QWidget):
                 "reactive": {
                     "enabled": self._reactive_settings.enabled,
                     "firePulse": self._reactive_settings.fire_pulse,
+                    "fireCadenceMs": self._reactive_settings.fire_cadence_ms,
+                    "fireKeySequence": self._reactive_settings.fire_key_sequence,
                     "gapExpansion": self._reactive_settings.gap_expansion,
                     "opacityPulse": self._reactive_settings.opacity_pulse,
                     "hideOnAds": self._reactive_settings.hide_on_ads,
@@ -270,6 +272,7 @@ class MainWindow(QWidget):
             "liveEnabled": settings.live_enabled,
             "zoomEnabled": settings.zoom_enabled,
             "hotkeySequence": settings.hotkey_sequence,
+            "activationMode": settings.activation_mode,
             "displayMode": settings.display_mode,
             "targetMonitorId": settings.target_monitor_id,
             "positionXPercent": settings.position_x_percent,

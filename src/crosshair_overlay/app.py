@@ -20,6 +20,7 @@ from .app_metadata import APP_VERSION
 from .app_settings import AccessibilitySettings, AppSettings, BetaZoomSettings, GameLoadout, GameProfile, LibraryCollection, ReactiveSettings, ThemeMode
 from .config import OverlayShape, OverlayStyle
 from .config_manager import ConfigManager
+from .compatibility_check import probe_screen_capture
 from .creator.conversion import creator_to_overlay_style, overlay_style_to_creator
 from .creator.io import load_creator_crosshair, save_creator_crosshair
 from .creator.models import CreatorCrosshair, CreatorLayer
@@ -35,11 +36,12 @@ from .crosshairs import (
 )
 from .crosshairs.io import XHAIR_EXTENSION, XPACK_EXTENSION
 from .hotkey_utils import is_hotkey_pressed, parse_hotkey
+from .input_reactivity import FireInputTracker
 from .overlay_window import OverlayWindow
 from .zoom_overlay_window import ZoomOverlayWindow
 from .zoom_pipeline import ZoomFrameProcessor
 from .mouse_wheel_hook import GlobalMouseWheelHook
-from .zoom_controls import effective_zoom_max_percent, stepped_zoom_percent
+from .zoom_controls import ZoomActivationLatch, effective_zoom_max_percent, stepped_zoom_percent
 from .runtime_adaptation import GpuRuntimeAdaptation
 from .storage_paths import StoragePaths
 from .style_registry import load_style_pack, save_style_pack
@@ -205,6 +207,9 @@ class AppController(QObject):
             recent_crosshair_colors=self._settings.recent_crosshair_colors,
         )
         self._main_window.creator_save_handler = self.save_creator_crosshair
+        self._main_window.settings_backup_preview_handler = lambda: self._config.preview_backup(self._settings)
+        self._main_window.settings_backup_restore_handler = self.restore_settings_backup
+        self._main_window.compatibility_check_handler = self.run_compatibility_check
         self._main_window.set_quick_switch_hotkeys(
             self._settings.quick_switch_next_hotkey,
             self._settings.quick_switch_previous_hotkey,
@@ -250,6 +255,7 @@ class AppController(QObject):
         self._loadout_hotkey_held = {"next": False, "previous": False, "favorite": False}
         self._sync_input_timer()
         self._zoom_hotkey = parse_hotkey(self._settings.beta_zoom.hotkey_sequence)
+        self._zoom_activation = ZoomActivationLatch()
         self._zoom_in_hotkey = parse_hotkey(self._settings.beta_zoom.zoom_in_hotkey_sequence)
         self._zoom_out_hotkey = parse_hotkey(self._settings.beta_zoom.zoom_out_hotkey_sequence)
         self._zoom_reset_hotkey = parse_hotkey(self._settings.beta_zoom.zoom_reset_hotkey_sequence)
@@ -266,12 +272,14 @@ class AppController(QObject):
         self._user32_input.GetAsyncKeyState.restype = ctypes.c_short
         self._mouse_left_held = False
         self._mouse_right_held = False
+        self._fire_input_tracker = FireInputTracker()
         self._ads_toggle_active = False
         self._ads_active = False
         self._emergency_held = False
         self._emergency_hidden = False
         self._ads_suppressed = False
         self._emergency_hotkey = parse_hotkey(self._settings.reactive.emergency_hotkey)
+        self._fire_hotkey = parse_hotkey(self._settings.reactive.fire_key_sequence)
         self._last_overlay_bounds: tuple[int, int, int, int] | None = None
         self._last_runtime_status = ""
         self._update_check_running = False
@@ -592,10 +600,12 @@ class AppController(QObject):
             return
         self._settings.reactive = settings
         self._emergency_hotkey = parse_hotkey(settings.emergency_hotkey)
+        self._fire_hotkey = parse_hotkey(settings.fire_key_sequence)
         self._main_window.set_reactive_settings(settings)
         self._sync_input_timer()
         if not settings.enabled:
             self._mouse_left_held = self._mouse_right_held = False
+            self._fire_input_tracker.reset()
             if self._ads_suppressed:
                 self._overlay.set_input_suppressed(False, settings.ads_transition_ms)
                 self._ads_suppressed = False
@@ -697,13 +707,17 @@ class AppController(QObject):
         self._emergency_held = emergency_down
         if not game_foreground:
             self._mouse_left_held = self._mouse_right_held = False
+            self._fire_input_tracker.reset()
             self._ads_toggle_active = False
             self._set_ads_state(False)
             self._overlay.cancel_fire_pulse()
             return
         left = bool(self._user32_input.GetAsyncKeyState(0x01) & 0x8000)
         right = bool(self._user32_input.GetAsyncKeyState(0x02) & 0x8000)
-        if reactive.enabled and not self._settings.accessibility.reduced_motion and left and not self._mouse_left_held and reactive.fire_pulse and self._overlay_visible and not self._emergency_hidden:
+        fire_key_down = bool(self._fire_hotkey and is_hotkey_pressed(self._fire_hotkey))
+        now = time.monotonic()
+        fire_trigger = self._fire_input_tracker.update(left, fire_key_down, now, reactive.fire_cadence_ms)
+        if reactive.enabled and not self._settings.accessibility.reduced_motion and fire_trigger and reactive.fire_pulse and self._overlay_visible and not self._emergency_hidden:
             self._overlay.trigger_fire_pulse(
                 reactive.fire_duration_ms,
                 reactive.fire_amplitude_percent if reactive.gap_expansion else 0,
@@ -785,6 +799,8 @@ class AppController(QObject):
         self._settings.beta_zoom = normalized
         if previous_settings.hide_crosshair_when_zoomed and not normalized.hide_crosshair_when_zoomed:
             self._update_zoom_crosshair_visibility(False)
+        if previous_settings.activation_mode != normalized.activation_mode:
+            self._zoom_activation.reset()
         self._zoom_hotkey = parse_hotkey(normalized.hotkey_sequence)
         self._zoom_in_hotkey = parse_hotkey(normalized.zoom_in_hotkey_sequence)
         self._zoom_out_hotkey = parse_hotkey(normalized.zoom_out_hotkey_sequence)
@@ -1058,6 +1074,26 @@ class AppController(QObject):
         self._refresh_games_page()
         self._sync_windows_autostart_setting()
         self._save_settings()
+
+    def restore_settings_backup(self, fingerprint: str) -> dict[str, bool]:
+        """Restore a previewed backup; restart is needed to reinitialize live services."""
+        self._config.restore_backup(self._settings, fingerprint)
+        QMessageBox.information(
+            self._main_window,
+            "Settings restored",
+            "The backup is now active on disk. Restart Crosshair Overlay to apply it. "
+            "Your settings from before the restore were kept as the new backup.",
+        )
+        return {"restored": True, "restartRequired": True}
+
+    def run_compatibility_check(self) -> dict[str, object]:
+        """Probe only a 2×2 desktop sample per display; never retain or export pixels."""
+        reports = [probe_screen_capture(screen, index) for index, screen in enumerate(self._app.screens())]
+        return {
+            "checkedAt": datetime.now().isoformat(timespec="seconds"),
+            "displays": reports,
+            "note": "This verifies desktop capture only. It does not prove capture of exclusive-fullscreen, protected, or anti-cheat-controlled game surfaces.",
+        }
 
     def _check_updates_on_startup(self) -> None:
         if not self._settings.auto_update_on_startup:
@@ -1470,6 +1506,8 @@ class AppController(QObject):
         self.set_reactive_settings(replace(
             self._settings.reactive,
             fire_pulse=loadout.fire_pulse,
+            fire_cadence_ms=loadout.fire_cadence_ms,
+            fire_key_sequence=loadout.fire_key_sequence,
             gap_expansion=loadout.gap_expansion,
             opacity_pulse=loadout.opacity_pulse,
             hide_on_ads=loadout.hide_on_ads,
@@ -1682,10 +1720,10 @@ class AppController(QObject):
         allow_zoom = self._settings.beta_zoom.sidebar_enabled and self._settings.beta_zoom.zoom_enabled
         if allow_zoom and (live_zoom_enabled or getattr(self, "_zoom_capture_active", False)):
             self._poll_zoom_adjustment_hotkeys()
-        hotkey_down = (
-            allow_zoom
-            and not getattr(self._main_window, "keyboard_entry_active", False)
-            and is_hotkey_pressed(self._zoom_hotkey)
+        typing = bool(getattr(self._main_window, "keyboard_entry_active", False))
+        physical_hotkey_down = allow_zoom and is_hotkey_pressed(self._zoom_hotkey)
+        hotkey_down = self._zoom_activation.update(
+            physical_hotkey_down, allow_zoom, typing, self._settings.beta_zoom.activation_mode
         )
         if not live_zoom_enabled and not hotkey_down:
             self._hide_zoom_overlay()
@@ -2197,6 +2235,7 @@ class AppController(QObject):
             live_enabled=bool(settings.live_enabled),
             zoom_enabled=bool(settings.zoom_enabled),
             hotkey_sequence=sequence,
+            activation_mode=settings.activation_mode if settings.activation_mode in {"hold", "toggle"} else "hold",
             display_mode=display_mode,
             target_monitor_id=monitor_id,
             position_x_percent=max(0, min(100, int(settings.position_x_percent))),

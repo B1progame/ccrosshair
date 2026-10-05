@@ -15,10 +15,10 @@ It is built with `PySide6`, uses Windows-native overlay behavior, and stores you
 - Theme controls, accent color customization, and shared global size controls
 - Experimental Zoom with the `N` hotkey, local AI super-resolution, and optional overlay hiding
 
-**Latest Update (1.4.0)**
-- Added 210 original offline pixel designs, including 60 novelty crosshairs, with search, preview, export, and native overlay rendering.
-- Fixed creator save errors, made `N` the default Zoom shortcut, ignored it while app text inputs are focused, and added an option to hide the overlay while Zoom is visible.
-- Fixed a Qt worker error that stopped Zoom quality frames and verified local 3× AI upscaling.
+**Latest Update (1.5.0)**
+- Made Zoom and local AI super-resolution controls visible without requiring the beta preference.
+- Fixed the Windows blank control window and creator drag strokes, and added safer settings-backup restore and capture diagnostics.
+- AI enhancement applies to the magnified preview. The game’s built-in crosshair can only be disabled through game-supported settings; this app does not alter a game or its framebuffer.
 - Full details: see `CHANGELOG.md`
 
 **Platform**

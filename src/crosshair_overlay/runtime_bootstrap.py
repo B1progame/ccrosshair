@@ -26,7 +26,16 @@ def _contains_foreign_qt_runtime(directory: Path) -> bool:
 
 
 def configure_frozen_qt_runtime() -> None:
-    """Prefer the Qt DLLs and plugins shipped with a frozen Windows build."""
+    """Configure stable WebEngine rendering and prefer bundled frozen Qt."""
+    # The UI is a static React surface; Chromium GPU composition adds no
+    # benefit here and can leave QWebEngineView completely black when D3D
+    # shared-image contexts are lost. Keep this process-level setting before
+    # QtWebEngine is imported so Chromium starts in its reliable software path.
+    if sys.platform.startswith("win"):
+        chromium_flags = os.environ.get("QTWEBENGINE_CHROMIUM_FLAGS", "")
+        if "--disable-gpu" not in chromium_flags.split():
+            os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = f"{chromium_flags} --disable-gpu".strip()
+
     if not getattr(sys, "frozen", False):
         return
 

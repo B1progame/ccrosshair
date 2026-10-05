@@ -17,6 +17,8 @@ class GameLoadout:
     style_id: str
     zoom_percent: int = 200
     fire_pulse: bool = True
+    fire_cadence_ms: int = 0
+    fire_key_sequence: str = ""
     gap_expansion: bool = True
     opacity_pulse: bool = False
     hide_on_ads: bool = False
@@ -82,6 +84,8 @@ def _loadouts_from_data(raw: object, legacy_style_id: str) -> list[GameLoadout]:
             style_id=str(item.get("style_id", "")).strip()[:256],
             zoom_percent=bounded(item.get("zoom_percent"), 200, 200, 1600),
             fire_pulse=boolean(item.get("fire_pulse"), True),
+            fire_cadence_ms=bounded(item.get("fire_cadence_ms"), 0, 0, 1000),
+            fire_key_sequence=str(item.get("fire_key_sequence", "")).strip()[:128],
             gap_expansion=boolean(item.get("gap_expansion"), True),
             opacity_pulse=boolean(item.get("opacity_pulse"), False),
             hide_on_ads=boolean(item.get("hide_on_ads"), False),
@@ -115,6 +119,7 @@ class BetaZoomSettings:
     live_enabled: bool = False
     zoom_enabled: bool = False
     hotkey_sequence: str = "N"
+    activation_mode: str = "hold"
     display_mode: str = "monitor"
     target_monitor_id: str = "same_as_game"
     position_x_percent: int = 50
@@ -147,6 +152,8 @@ class AccessibilitySettings:
 class ReactiveSettings:
     enabled: bool = False
     fire_pulse: bool = True
+    fire_cadence_ms: int = 0
+    fire_key_sequence: str = ""
     gap_expansion: bool = True
     opacity_pulse: bool = False
     hide_on_ads: bool = False
@@ -166,7 +173,7 @@ class LibraryCollection:
 
 @dataclass
 class AppSettings:
-    schema_version: int = 7
+    schema_version: int = 8
     theme_mode: str = ThemeMode.SYSTEM.value
     accent_color: str = "#A923E2"
     selected_style_id: str = "classic_cross"
@@ -230,7 +237,7 @@ class AppSettings:
         accent = safe.get("accent_color")
         if not isinstance(accent, str) or len(accent) != 7 or not accent.startswith("#") or any(c not in "0123456789abcdefABCDEF" for c in accent[1:]):
             safe["accent_color"] = defaults.accent_color
-        safe["schema_version"] = 7
+        safe["schema_version"] = 8
         safe["selected_size_percent"] = bounded_int(safe.get("selected_size_percent"), 100, 50, 200)
         safe["global_size_percent"] = bounded_int(safe.get("global_size_percent"), 100, 50, 200)
 
@@ -283,6 +290,9 @@ class AppSettings:
             hotkey_sequence = str(raw_beta.get("hotkey_sequence", "")).strip()
             if hotkey_sequence.casefold() == "ctrl+alt+z":
                 hotkey_sequence = "N"  # Replace the shipped default with the requested N shortcut.
+        activation_mode = raw_beta.get("activation_mode", "hold")
+        if activation_mode not in {"hold", "toggle"}:
+            activation_mode = "hold"
         display_mode = str(raw_beta.get("display_mode", "monitor")).strip().lower() or "monitor"
         if display_mode not in {"crosshair", "monitor"}:
             display_mode = "monitor"
@@ -302,6 +312,7 @@ class AppSettings:
             live_enabled=safe_bool(raw_beta.get("live_enabled"), False),
             zoom_enabled=safe_bool(raw_beta.get("zoom_enabled"), False),
             hotkey_sequence=hotkey_sequence,
+            activation_mode=activation_mode,
             display_mode=display_mode,
             target_monitor_id=str(raw_beta.get("target_monitor_id", "same_as_game")).strip() or "same_as_game",
             position_x_percent=bounded_int(raw_beta.get("position_x_percent", 50), 50, 0, 100),
@@ -338,6 +349,8 @@ class AppSettings:
         safe["reactive"] = ReactiveSettings(
             enabled=safe_bool(raw_reactive.get("enabled"), False),
             fire_pulse=safe_bool(raw_reactive.get("fire_pulse"), True),
+            fire_cadence_ms=bounded_int(raw_reactive.get("fire_cadence_ms", 0), 0, 0, 1000),
+            fire_key_sequence=str(raw_reactive.get("fire_key_sequence", "")).strip()[:128],
             gap_expansion=safe_bool(raw_reactive.get("gap_expansion"), True),
             opacity_pulse=safe_bool(raw_reactive.get("opacity_pulse"), False),
             hide_on_ads=safe_bool(raw_reactive.get("hide_on_ads"), False),

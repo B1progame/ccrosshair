@@ -24,7 +24,7 @@ class ConfigResilienceTests(unittest.TestCase):
 
     def test_legacy_settings_migrate_and_invalid_numbers_fall_back(self) -> None:
         settings = AppSettings.from_dict({"beta_zoom": {"zoom_percent": "bad", "position_x_percent": None}})
-        self.assertEqual(settings.schema_version, 7)
+        self.assertEqual(settings.schema_version, 8)
         self.assertEqual(settings.beta_zoom.zoom_percent, 200)
         self.assertEqual(settings.beta_zoom.position_x_percent, 50)
 
@@ -46,7 +46,7 @@ class ConfigResilienceTests(unittest.TestCase):
             ],
             "library_tags": {"dot": [" Sniper ", "sniper", "tiny"], "bad": ["ok"], "cross": "bad"},
         })
-        self.assertEqual(settings.schema_version, 7)
+        self.assertEqual(settings.schema_version, 8)
         self.assertEqual([(item.collection_id, item.name, item.style_ids) for item in settings.library_collections],
                          [("aim", "Aim", ["dot", "cross"])])
         self.assertEqual(settings.library_tags, {"dot": ["sniper", "tiny"], "bad": ["ok"]})
@@ -79,10 +79,53 @@ class ConfigResilienceTests(unittest.TestCase):
             self.assertEqual(json.loads(manager.backup_path.read_text(encoding="utf-8"))["selected_style_id"], "dot_micro")
             self.assertEqual(json.loads(manager.settings_path.read_text(encoding="utf-8"))["selected_style_id"], "classic_cross")
 
+    def test_backup_preview_is_grouped_and_restore_keeps_current_state_as_backup(self) -> None:
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as tmp:
+            manager = self.make_manager(Path(tmp))
+            original = AppSettings(selected_style_id="dot_micro", accent_color="#123456")
+            manager.settings_path.write_text(json.dumps(original.to_dict()), encoding="utf-8")
+            current = AppSettings(selected_style_id="classic_cross", accent_color="#ABCDEF")
+            manager.save(current)
+
+            preview = manager.preview_backup(current)
+            self.assertTrue(preview["available"])
+            self.assertEqual(preview["changedGroups"], ["Interface and appearance", "Crosshair and overlay"])
+            self.assertNotIn("storagePath", preview["summary"])
+
+            restored = manager.restore_backup(current, str(preview["fingerprint"]))
+
+            self.assertEqual(restored.selected_style_id, "dot_micro")
+            self.assertEqual(restored.accent_color, "#123456")
+            self.assertEqual(json.loads(manager.settings_path.read_text(encoding="utf-8"))["selected_style_id"], "dot_micro")
+            self.assertEqual(json.loads(manager.backup_path.read_text(encoding="utf-8"))["selected_style_id"], "classic_cross")
+
+    def test_restore_refuses_backup_changed_after_preview(self) -> None:
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as tmp:
+            manager = self.make_manager(Path(tmp))
+            current = AppSettings(selected_style_id="classic_cross")
+            manager.settings_path.write_text(json.dumps(current.to_dict()), encoding="utf-8")
+            manager.backup_path.write_text(json.dumps(AppSettings(selected_style_id="dot_micro").to_dict()), encoding="utf-8")
+            preview = manager.preview_backup(current)
+            manager.backup_path.write_text(json.dumps(AppSettings(selected_style_id="ring_micro").to_dict()), encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "changed after preview"):
+                manager.restore_backup(current, str(preview["fingerprint"]))
+            self.assertEqual(json.loads(manager.settings_path.read_text(encoding="utf-8"))["selected_style_id"], "classic_cross")
+
     def test_boolean_strings_are_migrated_without_python_truthiness_bugs(self) -> None:
         settings = AppSettings.from_dict({"auto_update_on_startup": "false", "beta_zoom": {"live_enabled": "0"}})
         self.assertFalse(settings.auto_update_on_startup)
         self.assertFalse(settings.beta_zoom.live_enabled)
+
+    def test_fire_cadence_is_bounded_and_migrates_to_press_only(self) -> None:
+        migrated = AppSettings.from_dict({"reactive": {"fire_key_sequence": "CTRL+K"}, "game_profiles": [{"game_id": "g", "loadouts": [
+            {"loadout_id": "l", "name": "Main", "style_id": "dot"}
+        ]}]})
+        self.assertEqual(migrated.reactive.fire_cadence_ms, 0)
+        self.assertEqual(migrated.reactive.fire_key_sequence, "CTRL+K")
+        self.assertEqual(migrated.game_profiles[0].loadouts[0].fire_cadence_ms, 0)
+        bounded = AppSettings.from_dict({"reactive": {"fire_cadence_ms": 1500}})
+        self.assertEqual(bounded.reactive.fire_cadence_ms, 1000)
 
 
 if __name__ == "__main__":

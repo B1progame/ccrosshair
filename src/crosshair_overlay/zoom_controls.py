@@ -14,3 +14,28 @@ def stepped_zoom_percent(current: int, direction: int, step: int = 25, minimum: 
     """Apply a bounded zoom-wheel/key increment without losing crop limits."""
     sign = 1 if direction > 0 else -1 if direction < 0 else 0
     return max(minimum, min(maximum, int(current) + sign * max(1, int(step))))
+
+
+class ZoomActivationLatch:
+    """Convert the configured physical hotkey into hold or edge-triggered toggle state."""
+
+    def __init__(self) -> None:
+        self._held = False
+        self._toggled = False
+
+    def reset(self) -> None:
+        self._held = False
+        self._toggled = False
+
+    def update(self, physical_down: bool, enabled: bool, typing: bool, mode: str) -> bool:
+        if not enabled:
+            self.reset()
+            return False
+        physical_down = bool(physical_down)
+        rising = physical_down and not self._held
+        self._held = physical_down
+        if mode == "toggle":
+            if rising and not typing:
+                self._toggled = not self._toggled
+            return self._toggled
+        return physical_down and not typing

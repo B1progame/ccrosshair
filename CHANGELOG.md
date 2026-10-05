@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.5.0 - 2026-10-05
+
+- Fixed the blank native control window on Windows systems where QtWebEngine loses its D3D compositor context; the lightweight React UI now uses reliable software rendering.
+- Fixed creator strokes stopping when WebEngine rejects pointer capture; drawing now continues without capture and interpolates fast drags across skipped cells.
+- Clarified that local 3× AI upscaling runs in Zoom's Quality mode, while center-mask reticle cleanup is approximate preview-only processing and cannot change the game's built-in crosshair.
+- Added hold/toggle Zoom hotkey activation while preserving hold behavior by default.
+- Added configurable press-only or held-fire repeat cadence globally and per game loadout.
+- Added a privacy-safe grouped settings-backup preview and guarded restore flow; current settings remain recoverable and restart applies the restored file.
+- Added a guided per-display desktop-capture probe and source-linked game crosshair guidance without changing game settings.
+- Made Zoom and its local AI upscaler discoverable without enabling a separate beta preference; the page now shows the actual model/provider diagnostics and Quality mode.
+
+### Known limits
+- AI super-resolution enhances the Zoom preview only. It cannot remove the game's reticle from the game itself. Preview cleanup remains an approximate center-mask fill, not AI inpainting.
+- Real game capture compatibility and gameplay performance remain unverified; see `FEATURE_STATUS.md` for measured results and outstanding checks.
+
 ## 1.4.0 - 2026-10-05
 
 ### Crosshair Library

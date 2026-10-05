@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import shutil
 import tempfile
@@ -94,6 +95,51 @@ class ConfigManager:
             return True
         finally:
             temporary.unlink(missing_ok=True)
+
+    def preview_backup(self, current: AppSettings) -> dict[str, object]:
+        """Return a privacy-safe, field-group preview of the settings backup."""
+        if not self.backup_path.exists():
+            return {"available": False, "reason": "No settings backup is available."}
+        try:
+            raw = self.backup_path.read_bytes()
+            backup = self._read_settings(self.backup_path)
+        except (OSError, json.JSONDecodeError, TypeError, ValueError):
+            return {"available": False, "reason": "The settings backup is invalid and was left untouched."}
+        before, after = current.to_dict(), backup.to_dict()
+        groups = {
+            "Interface and appearance": ("theme_mode", "accent_color", "selected_size_percent", "global_size_percent"),
+            "Crosshair and overlay": ("selected_style_id", "overlay_enabled", "auto_enable_on_fullscreen"),
+            "Zoom": ("beta_zoom",),
+            "Game profiles and loadouts": ("game_profiles", "auto_switch_game_profiles"),
+            "Input-reactive behavior": ("reactive", "quick_switch_next_hotkey", "quick_switch_previous_hotkey", "quick_switch_favorite_hotkey"),
+            "Library organization": ("favorite_style_ids", "recent_style_ids", "recent_crosshair_colors", "library_collections", "library_tags"),
+            "Accessibility": ("accessibility",),
+            "Startup preferences": ("auto_update_on_startup", "run_on_startup_tray"),
+        }
+        changed = [label for label, keys in groups.items() if any(before.get(key) != after.get(key) for key in keys)]
+        stat = self.backup_path.stat()
+        return {
+            "available": True,
+            "fingerprint": hashlib.sha256(raw).hexdigest(),
+            "modified": stat.st_mtime_ns,
+            "changedGroups": changed,
+            "summary": {
+                "games": len(backup.game_profiles),
+                "collections": len(backup.library_collections),
+                "favorites": len(backup.favorite_style_ids),
+                "zoomMode": backup.beta_zoom.runtime_mode,
+                "overlayEnabled": backup.overlay_enabled,
+            },
+        }
+
+    def restore_backup(self, current: AppSettings, expected_fingerprint: str) -> AppSettings:
+        """Restore only the backup the user previewed, keeping current settings as the new backup."""
+        preview = self.preview_backup(current)
+        if not preview.get("available") or preview.get("fingerprint") != expected_fingerprint:
+            raise ValueError("The settings backup changed after preview. Review it again before restoring.")
+        restored = self._read_settings(self.backup_path)
+        self.save(restored)
+        return restored
 
     def _read_settings(self, path: Path) -> AppSettings:
         raw = json.loads(path.read_text(encoding="utf-8"))

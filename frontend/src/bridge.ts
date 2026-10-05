@@ -10,7 +10,7 @@ export type Style = {
   editableSettings: Array<{key:string; label:string; kind:string; minimum:number|null; maximum:number|null; step:number|null; value:number|string|boolean|null}>;
 };
 export type ZoomSettings = {
-  sidebarEnabled:boolean; liveEnabled:boolean; zoomEnabled:boolean; hotkeySequence:string;
+  sidebarEnabled:boolean; liveEnabled:boolean; zoomEnabled:boolean; hotkeySequence:string; activationMode:'hold'|'toggle';
   displayMode:'monitor'|'crosshair'; targetMonitorId:string; positionXPercent:number; positionYPercent:number;
   zoomPercent:number; runtimeMode:'quiet'|'eco'|'fast'|'balanced'|'quality'; autoAdaptEnabled:boolean;
   zoomInHotkeySequence:string; zoomOutHotkeySequence:string; zoomResetHotkeySequence:string;
@@ -19,13 +19,13 @@ export type ZoomSettings = {
   hideCrosshairWhenZoomed:boolean;
 };
 export type Accessibility={highContrast:boolean;reducedMotion:boolean;density:'compact'|'comfortable'|'spacious';textScale:number};
-export type Reactive={enabled:boolean;firePulse:boolean;gapExpansion:boolean;opacityPulse:boolean;hideOnAds:boolean;emergencyHotkey:string;fireDurationMs:number;fireAmplitudePercent:number;adsTransitionMs:number;adsMode:'hold'|'toggle'};
+export type Reactive={enabled:boolean;firePulse:boolean;fireCadenceMs:number;fireKeySequence:string;gapExpansion:boolean;opacityPulse:boolean;hideOnAds:boolean;emergencyHotkey:string;fireDurationMs:number;fireAmplitudePercent:number;adsTransitionMs:number;adsMode:'hold'|'toggle'};
 export type CreatorLayer={id:string;name:string;primitive:'draw'|'cross'|'dot'|'ring'|'bracket';visible:boolean;filled_cells:Array<[number,number]>};
 export type CreatorModel = {
   format:'crosshair-overlay-creator-v2'|'crosshair-overlay-creator-v3'; version:number; name:string; grid_size:number; creation_mode:'draw'|'pixel';
   color_hex:string; filled_cells:Array<[number,number]>; style_id:string; created_at:string; updated_at:string; layers?:CreatorLayer[];
 };
-export type GameLoadout={loadout_id:string;name:string;style_id:string;zoom_percent:number;fire_pulse:boolean;gap_expansion:boolean;opacity_pulse:boolean;hide_on_ads:boolean;fire_duration_ms:number;fire_amplitude_percent:number;ads_transition_ms:number;color_hex:string;opacity_percent:number;outline_color_hex:string;outline_opacity_percent:number;ads_style_id:string;ads_color_hex:string;ads_opacity_percent:number;ads_outline_color_hex:string;ads_outline_opacity_percent:number};
+export type GameLoadout={loadout_id:string;name:string;style_id:string;zoom_percent:number;fire_pulse:boolean;fire_cadence_ms:number;fire_key_sequence:string;gap_expansion:boolean;opacity_pulse:boolean;hide_on_ads:boolean;fire_duration_ms:number;fire_amplitude_percent:number;ads_transition_ms:number;color_hex:string;opacity_percent:number;outline_color_hex:string;outline_opacity_percent:number;ads_style_id:string;ads_color_hex:string;ads_opacity_percent:number;ads_outline_color_hex:string;ads_outline_opacity_percent:number};
 export type Game = {id:string; title:string; source:string; executablePath:string; iconPath:string; styleId:string; enabled:boolean;loadouts:GameLoadout[];activeLoadoutId:string};
 export type LibraryCollection={id:string;name:string;styleIds:string[]};
 export type SettingsSnapshot = {
@@ -57,6 +57,8 @@ export type CommandPayloads = {
   updateGameLoadouts:{gameId:string;loadouts:GameLoadout[];activeLoadoutId:string}; selectGameLoadout:{gameId:string;loadoutId:string};
   importGame:Record<string,never>; rescanGames:Record<string,never>; setZoom:{settings:ZoomSettings};
   chooseStorage:Record<string,never>; checkUpdates:Record<string,never>; resetSettings:Record<string,never>; exportDiagnostics:Record<string,never>;
+  previewSettingsBackup:Record<string,never>; restoreSettingsBackup:{fingerprint:string};
+  runCompatibilityCheck:Record<string,never>;
   setAccessibility:{settings:Accessibility}; setReactive:{settings:Reactive};
   setLoadoutHotkeys:{nextHotkey:string;previousHotkey:string;favoriteHotkey:string};
   setMonitorOffset:{monitorId:string;x:number;y:number};

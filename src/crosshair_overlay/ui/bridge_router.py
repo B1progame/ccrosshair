@@ -31,8 +31,10 @@ class BridgeCommandRouter:
         "creatorExport": {"model"}, "setGameProfile": {"gameId", "styleId", "enabled"},
         "updateGameLoadouts": {"gameId", "loadouts", "activeLoadoutId"},
         "selectGameLoadout": {"gameId", "loadoutId"},
-        "importGame": set(), "rescanGames": set(), "setZoom": {"settings": {"sidebarEnabled", "liveEnabled", "zoomEnabled", "hotkeySequence", "displayMode", "targetMonitorId", "positionXPercent", "positionYPercent", "zoomPercent", "runtimeMode", "autoAdaptEnabled", "zoomInHotkeySequence", "zoomOutHotkeySequence", "zoomResetHotkeySequence", "animationEnabled", "animationDurationMs", "consumeMouseWheel", "cleanupEnabled", "cleanupRadius", "cleanupStrength", "cleanupPreview", "hideCrosshairWhenZoomed"}}, "setTypingState": {"active"},
+        "importGame": set(), "rescanGames": set(), "setZoom": {"settings": {"sidebarEnabled", "liveEnabled", "zoomEnabled", "hotkeySequence", "activationMode", "displayMode", "targetMonitorId", "positionXPercent", "positionYPercent", "zoomPercent", "runtimeMode", "autoAdaptEnabled", "zoomInHotkeySequence", "zoomOutHotkeySequence", "zoomResetHotkeySequence", "animationEnabled", "animationDurationMs", "consumeMouseWheel", "cleanupEnabled", "cleanupRadius", "cleanupStrength", "cleanupPreview", "hideCrosshairWhenZoomed"}}, "setTypingState": {"active"},
         "chooseStorage": set(), "checkUpdates": set(), "resetSettings": set(), "exportDiagnostics": set(),
+        "previewSettingsBackup": set(), "restoreSettingsBackup": {"fingerprint"},
+        "runCompatibilityCheck": set(),
         "setAccessibility": {"settings"}, "setReactive": {"settings"},
         "setLoadoutHotkeys": {"nextHotkey", "previousHotkey", "favoriteHotkey"},
         "setMonitorOffset": {"monitorId", "x", "y"},
@@ -220,6 +222,24 @@ class BridgeCommandRouter:
             return {"accepted": bool(path), "cancelled": not bool(path)}
         if command == "checkUpdates": w.check_updates_requested.emit(); return {"accepted": True}
         if command == "resetSettings": w.reset_requested.emit(); return {"accepted": True}
+        if command == "previewSettingsBackup":
+            handler = getattr(w, "settings_backup_preview_handler", None)
+            if not callable(handler):
+                return {"available": False, "reason": "Settings backup preview is unavailable."}
+            return handler()
+        if command == "restoreSettingsBackup":
+            fingerprint = payload["fingerprint"]
+            if not isinstance(fingerprint, str) or not re.fullmatch(r"[0-9a-f]{64}", fingerprint):
+                raise ValueError("Invalid settings backup preview token")
+            handler = getattr(w, "settings_backup_restore_handler", None)
+            if not callable(handler):
+                raise RuntimeError("Settings backup restore is unavailable")
+            return handler(fingerprint)
+        if command == "runCompatibilityCheck":
+            handler = getattr(w, "compatibility_check_handler", None)
+            if not callable(handler):
+                raise RuntimeError("The monitor capture check is unavailable")
+            return handler()
         if command == "exportDiagnostics":
             diagnostics = dict(w._zoom_diagnostics)
             report = {
@@ -420,7 +440,7 @@ class BridgeCommandRouter:
 
     @staticmethod
     def _game_loadouts(raw: object, definitions: dict[str, CrosshairDefinition]) -> list[dict]:
-        fields = {"loadout_id", "name", "style_id", "zoom_percent", "fire_pulse", "gap_expansion",
+        fields = {"loadout_id", "name", "style_id", "zoom_percent", "fire_pulse", "fire_cadence_ms", "fire_key_sequence", "gap_expansion",
                   "opacity_pulse", "hide_on_ads", "fire_duration_ms", "fire_amplitude_percent", "ads_transition_ms",
                   "color_hex", "opacity_percent", "outline_color_hex", "outline_opacity_percent", "ads_style_id",
                   "ads_color_hex", "ads_opacity_percent", "ads_outline_color_hex", "ads_outline_opacity_percent"}
@@ -428,7 +448,7 @@ class BridgeCommandRouter:
             raise ValueError("A game profile can have at most 20 loadouts")
         result: list[dict] = []
         seen: set[str] = set()
-        bounds = {"zoom_percent": (200, 1600), "fire_duration_ms": (40, 1000),
+        bounds = {"zoom_percent": (200, 1600), "fire_duration_ms": (40, 1000), "fire_cadence_ms": (0, 1000),
                   "fire_amplitude_percent": (0, 100), "ads_transition_ms": (0, 500),
                   "opacity_percent": (0, 100), "outline_opacity_percent": (0, 100),
                   "ads_opacity_percent": (0, 100), "ads_outline_opacity_percent": (0, 100)}
@@ -447,6 +467,10 @@ class BridgeCommandRouter:
             if not isinstance(ads_style_id, str) or (ads_style_id and ads_style_id not in definitions):
                 raise ValueError("Invalid ADS style")
             normalized["ads_style_id"] = ads_style_id
+            fire_key = item["fire_key_sequence"]
+            if not isinstance(fire_key, str) or len(fire_key) > 128 or (fire_key.strip() and parse_hotkey(fire_key) is None):
+                raise ValueError("Invalid loadout fire key")
+            normalized["fire_key_sequence"] = parse_hotkey(fire_key).sequence if fire_key.strip() else ""
             for key, (minimum, maximum) in bounds.items():
                 value = item[key]
                 if type(value) is not int or not minimum <= value <= maximum:
@@ -501,7 +525,7 @@ class BridgeCommandRouter:
 
     @staticmethod
     def _zoom_settings(raw: dict) -> BetaZoomSettings:
-        string_fields = {"hotkeySequence": "hotkey_sequence", "displayMode": "display_mode", "targetMonitorId": "target_monitor_id", "runtimeMode": "runtime_mode", "zoomInHotkeySequence": "zoom_in_hotkey_sequence", "zoomOutHotkeySequence": "zoom_out_hotkey_sequence", "zoomResetHotkeySequence": "zoom_reset_hotkey_sequence"}
+        string_fields = {"hotkeySequence": "hotkey_sequence", "activationMode": "activation_mode", "displayMode": "display_mode", "targetMonitorId": "target_monitor_id", "runtimeMode": "runtime_mode", "zoomInHotkeySequence": "zoom_in_hotkey_sequence", "zoomOutHotkeySequence": "zoom_out_hotkey_sequence", "zoomResetHotkeySequence": "zoom_reset_hotkey_sequence"}
         bool_fields = {"sidebarEnabled": "sidebar_enabled", "liveEnabled": "live_enabled", "zoomEnabled": "zoom_enabled", "autoAdaptEnabled": "auto_adapt_enabled", "animationEnabled": "animation_enabled", "consumeMouseWheel": "consume_mouse_wheel", "cleanupEnabled": "cleanup_enabled", "cleanupPreview": "cleanup_preview", "hideCrosshairWhenZoomed": "hide_crosshair_when_zoomed"}
         int_fields = {"positionXPercent": ("position_x_percent", 0, 100), "positionYPercent": ("position_y_percent", 0, 100), "zoomPercent": ("zoom_percent", 200, 1600), "animationDurationMs": ("animation_duration_ms", 0, 5000), "cleanupRadius": ("cleanup_radius", 1, 24), "cleanupStrength": ("cleanup_strength", 0, 100)}
         values = {}
@@ -510,6 +534,7 @@ class BridgeCommandRouter:
             if not isinstance(value, str) or len(value) > 128: raise ValueError(f"Invalid {name}")
             values[field] = value
         if values["display_mode"] not in {"monitor", "crosshair"}: raise ValueError("Unsupported zoom display mode")
+        if values["activation_mode"] not in {"hold", "toggle"}: raise ValueError("Unsupported Zoom activation mode")
         if values["runtime_mode"] not in {"quiet", "eco", "fast", "balanced", "quality"}: raise ValueError("Unsupported zoom runtime mode")
         for name, field in bool_fields.items():
             if not isinstance(raw[name], bool): raise ValueError(f"Invalid {name}")
@@ -538,7 +563,7 @@ class BridgeCommandRouter:
         from ..app_settings import ReactiveSettings
         if not isinstance(raw, dict):
             raise ValueError("Invalid input-reactive settings")
-        fields = {"enabled", "firePulse", "gapExpansion", "opacityPulse", "hideOnAds",
+        fields = {"enabled", "firePulse", "fireCadenceMs", "fireKeySequence", "gapExpansion", "opacityPulse", "hideOnAds",
                   "emergencyHotkey", "fireDurationMs", "fireAmplitudePercent", "adsTransitionMs", "adsMode"}
         if set(raw) != fields:
             raise ValueError("Invalid input-reactive settings")
@@ -546,13 +571,20 @@ class BridgeCommandRouter:
             if type(raw[key]) is not bool: raise ValueError(f"{key} must be boolean")
         hotkey = raw["emergencyHotkey"]
         if not isinstance(hotkey, str) or len(hotkey) > 128: raise ValueError("Emergency hotkey is invalid")
+        fire_key = raw["fireKeySequence"]
+        if not isinstance(fire_key, str) or len(fire_key) > 128 or (fire_key.strip() and parse_hotkey(fire_key) is None):
+            raise ValueError("Fire key is invalid")
         if not isinstance(raw["adsMode"], str) or raw["adsMode"] not in {"hold", "toggle"}: raise ValueError("ADS mode must be hold or toggle")
-        ranges = {"fireDurationMs": (40, 1000), "fireAmplitudePercent": (0, 100), "adsTransitionMs": (0, 500)}
+        ranges = {"fireCadenceMs": (0, 1000), "fireDurationMs": (40, 1000), "fireAmplitudePercent": (0, 100), "adsTransitionMs": (0, 500)}
         values = {}
         for key, (minimum, maximum) in ranges.items():
             value = raw[key]
             if type(value) is not int or not minimum <= value <= maximum: raise ValueError(f"{key} is out of range")
             values[key] = value
-        return ReactiveSettings(raw["enabled"], raw["firePulse"], raw["gapExpansion"], raw["opacityPulse"],
-                                raw["hideOnAds"], hotkey.strip(), values["fireDurationMs"],
-                                values["fireAmplitudePercent"], values["adsTransitionMs"], raw["adsMode"])
+        return ReactiveSettings(enabled=raw["enabled"], fire_pulse=raw["firePulse"],
+                                fire_cadence_ms=values["fireCadenceMs"], gap_expansion=raw["gapExpansion"],
+                                fire_key_sequence=parse_hotkey(fire_key).sequence if fire_key.strip() else "",
+                                opacity_pulse=raw["opacityPulse"], hide_on_ads=raw["hideOnAds"],
+                                emergency_hotkey=hotkey.strip(), fire_duration_ms=values["fireDurationMs"],
+                                fire_amplitude_percent=values["fireAmplitudePercent"],
+                                ads_transition_ms=values["adsTransitionMs"], ads_mode=raw["adsMode"])

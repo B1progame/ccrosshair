@@ -26,6 +26,7 @@ from crosshair_overlay.crosshairs import CrosshairLibrary
 from crosshair_overlay.storage_paths import StoragePaths
 from crosshair_overlay.theme_manager import ThemeManager
 from crosshair_overlay.ui.bridge_router import BridgeCommandRouter
+from crosshair_overlay.zoom_controls import ZoomActivationLatch
 from crosshair_overlay.hotkey_utils import parse_hotkey
 
 
@@ -105,13 +106,15 @@ class UiRegressionTests(unittest.TestCase):
     def test_game_loadout_bridge_validates_appearance_fields(self) -> None:
         definition = self.definitions["classic_cross"]
         valid = {"loadout_id": "main", "name": "Main", "style_id": "classic_cross", "zoom_percent": 200,
-                 "fire_pulse": True, "gap_expansion": True, "opacity_pulse": False, "hide_on_ads": False,
+                 "fire_pulse": True, "fire_cadence_ms": 0, "fire_key_sequence": "", "gap_expansion": True, "opacity_pulse": False, "hide_on_ads": False,
                  "fire_duration_ms": 120, "fire_amplitude_percent": 18, "ads_transition_ms": 80,
                  "color_hex": "#aabbcc", "opacity_percent": 75, "outline_color_hex": "", "outline_opacity_percent": 100,
                  "ads_style_id": "dot_micro", "ads_color_hex": "#112233", "ads_opacity_percent": 80,
                  "ads_outline_color_hex": "", "ads_outline_opacity_percent": 100}
         normalized = BridgeCommandRouter._game_loadouts([valid], {"classic_cross": definition, "dot_micro": self.definitions["dot_micro"]})
         self.assertEqual(normalized[0]["color_hex"], "#AABBCC")
+        keyed = {**valid, "fire_key_sequence": "CTRL+K"}
+        self.assertEqual(BridgeCommandRouter._game_loadouts([keyed], {"classic_cross": definition, "dot_micro": self.definitions["dot_micro"]})[0]["fire_key_sequence"], "Ctrl+K")
         invalid = {**valid, "color_hex": "red"}
         with self.assertRaises(ValueError):
             BridgeCommandRouter._game_loadouts([invalid], {"classic_cross": definition, "dot_micro": self.definitions["dot_micro"]})
@@ -238,6 +241,7 @@ class UiRegressionTests(unittest.TestCase):
                 self._settings.beta_zoom.live_enabled = False
                 self._main_window = WindowHarness()
                 self._zoom_hotkey = object()
+                self._zoom_activation = ZoomActivationLatch()
                 self.hidden = False
 
             def _hide_zoom_overlay(self):
@@ -265,6 +269,7 @@ class UiRegressionTests(unittest.TestCase):
                 self._settings.beta_zoom.live_enabled = False
                 self._main_window = WindowHarness()
                 self._zoom_hotkey = object()
+                self._zoom_activation = ZoomActivationLatch()
                 self.hidden = False
 
             def _hide_zoom_overlay(self):
@@ -509,6 +514,17 @@ class UiRegressionTests(unittest.TestCase):
         tagged = router.dispatch("queryCatalog", {"query": "sniper", "filter": "all", "page": 0, "pageSize": 36})
         self.assertEqual((collected["total"], collected["styles"][0]["id"]), (1, "dot_micro"))
         self.assertEqual((tagged["total"], tagged["styles"][0]["id"]), (1, "dot_micro"))
+
+    def test_settings_backup_preview_and_restore_use_only_the_preview_token(self) -> None:
+        class WindowHarness:
+            settings_backup_preview_handler = staticmethod(lambda: {"available": True, "fingerprint": "a" * 64})
+            settings_backup_restore_handler = staticmethod(lambda fingerprint: {"restored": fingerprint == "a" * 64})
+
+        router = BridgeCommandRouter(WindowHarness())
+        self.assertTrue(router.dispatch("previewSettingsBackup", {})["available"])
+        self.assertTrue(router.dispatch("restoreSettingsBackup", {"fingerprint": "a" * 64})["restored"])
+        with self.assertRaises(ValueError):
+            router.dispatch("restoreSettingsBackup", {"fingerprint": "invalid"})
 
     def test_imported_xhair_preserves_catalog_provenance(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
