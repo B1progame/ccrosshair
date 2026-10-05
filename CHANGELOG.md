@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.2.2 - 2026-10-05
+
+### Improvements
+- Replaced the classic Qt control pages with the React control interface.
+- Made creator-canvas drawing and drag-to-paint more reliable with pointer capture.
+- Reduced crosshair overlay flashes caused by brief fullscreen detection and game process scan gaps.
+- Avoided screen captures when Zoom is inactive.
+
+### Bug Fixes
+- Fixed backend creator save behavior, worker cleanup, and startup update preference handling.
+- Removed the legacy native-page fallback so the React interface is the only control surface.
+
 ## 1.2.0 - 2026-04-21
 
 ### UI Changes
@@ -14,3 +26,4 @@
 - Fixed UI text clipping and overflow issues in Crosshairs and Detail views by adding scroll-safe layouts.
 - Fixed folder/button restyling refresh issues when switching filters.
 - Fixed favorite heart symbol rendering issues by using stable unicode escape sequences.
+
