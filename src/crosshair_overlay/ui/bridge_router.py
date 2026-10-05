@@ -31,7 +31,7 @@ class BridgeCommandRouter:
         "creatorExport": {"model"}, "setGameProfile": {"gameId", "styleId", "enabled"},
         "updateGameLoadouts": {"gameId", "loadouts", "activeLoadoutId"},
         "selectGameLoadout": {"gameId", "loadoutId"},
-        "importGame": set(), "rescanGames": set(), "setZoom": {"settings": {"sidebarEnabled", "liveEnabled", "zoomEnabled", "hotkeySequence", "displayMode", "targetMonitorId", "positionXPercent", "positionYPercent", "zoomPercent", "runtimeMode", "autoAdaptEnabled", "zoomInHotkeySequence", "zoomOutHotkeySequence", "zoomResetHotkeySequence", "animationEnabled", "animationDurationMs", "consumeMouseWheel", "cleanupEnabled", "cleanupRadius", "cleanupStrength", "cleanupPreview"}},
+        "importGame": set(), "rescanGames": set(), "setZoom": {"settings": {"sidebarEnabled", "liveEnabled", "zoomEnabled", "hotkeySequence", "displayMode", "targetMonitorId", "positionXPercent", "positionYPercent", "zoomPercent", "runtimeMode", "autoAdaptEnabled", "zoomInHotkeySequence", "zoomOutHotkeySequence", "zoomResetHotkeySequence", "animationEnabled", "animationDurationMs", "consumeMouseWheel", "cleanupEnabled", "cleanupRadius", "cleanupStrength", "cleanupPreview", "hideCrosshairWhenZoomed"}}, "setTypingState": {"active"},
         "chooseStorage": set(), "checkUpdates": set(), "resetSettings": set(), "exportDiagnostics": set(),
         "setAccessibility": {"settings"}, "setReactive": {"settings"},
         "setLoadoutHotkeys": {"nextHotkey", "previousHotkey", "favoriteHotkey"},
@@ -173,8 +173,10 @@ class BridgeCommandRouter:
             model = self._creator_model(payload["model"])
             if command == "creatorSave":
                 if not isinstance(payload["activate"], bool): raise ValueError("activate must be a boolean")
-                w.creator_save_requested.emit(model, payload["activate"])
-                return {"accepted": True}
+                handler = getattr(w, "creator_save_handler", None)
+                if not callable(handler):
+                    raise RuntimeError("Creator saving is unavailable")
+                return handler(model, payload["activate"])
             path, _ = QFileDialog.getSaveFileName(w, "Export Creator Crosshair", f"{model.name or 'crosshair'}.chgrid", "Creator crosshair (*.chgrid)")
             if path: w.creator_export_requested.emit(model, self._with_suffix(path, ".chgrid"))
             return {"accepted": bool(path), "cancelled": not bool(path)}
@@ -207,6 +209,10 @@ class BridgeCommandRouter:
         if command == "rescanGames": w.rescan_games_requested.emit(); return {"accepted": True}
         if command == "setZoom":
             w.beta_zoom_settings_changed.emit(self._zoom_settings(payload["settings"]))
+            return {"accepted": True}
+        if command == "setTypingState":
+            if not isinstance(payload["active"], bool): raise ValueError("Typing state must be a boolean")
+            w.keyboard_entry_active = payload["active"]
             return {"accepted": True}
         if command == "chooseStorage":
             path = QFileDialog.getExistingDirectory(w, "Crosshair Storage Folder", w._storage_path)
@@ -496,7 +502,7 @@ class BridgeCommandRouter:
     @staticmethod
     def _zoom_settings(raw: dict) -> BetaZoomSettings:
         string_fields = {"hotkeySequence": "hotkey_sequence", "displayMode": "display_mode", "targetMonitorId": "target_monitor_id", "runtimeMode": "runtime_mode", "zoomInHotkeySequence": "zoom_in_hotkey_sequence", "zoomOutHotkeySequence": "zoom_out_hotkey_sequence", "zoomResetHotkeySequence": "zoom_reset_hotkey_sequence"}
-        bool_fields = {"sidebarEnabled": "sidebar_enabled", "liveEnabled": "live_enabled", "zoomEnabled": "zoom_enabled", "autoAdaptEnabled": "auto_adapt_enabled", "animationEnabled": "animation_enabled", "consumeMouseWheel": "consume_mouse_wheel", "cleanupEnabled": "cleanup_enabled", "cleanupPreview": "cleanup_preview"}
+        bool_fields = {"sidebarEnabled": "sidebar_enabled", "liveEnabled": "live_enabled", "zoomEnabled": "zoom_enabled", "autoAdaptEnabled": "auto_adapt_enabled", "animationEnabled": "animation_enabled", "consumeMouseWheel": "consume_mouse_wheel", "cleanupEnabled": "cleanup_enabled", "cleanupPreview": "cleanup_preview", "hideCrosshairWhenZoomed": "hide_crosshair_when_zoomed"}
         int_fields = {"positionXPercent": ("position_x_percent", 0, 100), "positionYPercent": ("position_y_percent", 0, 100), "zoomPercent": ("zoom_percent", 200, 1600), "animationDurationMs": ("animation_duration_ms", 0, 5000), "cleanupRadius": ("cleanup_radius", 1, 24), "cleanupStrength": ("cleanup_strength", 0, 100)}
         values = {}
         for name, field in string_fields.items():

@@ -4,6 +4,7 @@ from collections import OrderedDict
 
 from ..config import OverlayShape, OverlayStyle
 from .models import CrosshairDefinition, EditableField, SettingSpec
+from .extended_catalog import load_original_expansion
 
 
 def _settings(*items: SettingSpec) -> tuple[SettingSpec, ...]:
@@ -435,6 +436,11 @@ def build_builtin_catalog() -> "OrderedDict[str, CrosshairDefinition]":
         add_geometry(*data)
 
     for item in presets[len(catalog):]:
+        catalog[item.style_id] = item
+
+    for item in load_original_expansion():
+        if item.style_id in catalog:
+            raise ValueError(f"Original expansion id collides with built-in style: {item.style_id}")
         catalog[item.style_id] = item
 
     return catalog

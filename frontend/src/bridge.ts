@@ -16,6 +16,7 @@ export type ZoomSettings = {
   zoomInHotkeySequence:string; zoomOutHotkeySequence:string; zoomResetHotkeySequence:string;
   animationEnabled:boolean; animationDurationMs:number; consumeMouseWheel:boolean;
   cleanupEnabled:boolean; cleanupRadius:number; cleanupStrength:number; cleanupPreview:boolean;
+  hideCrosshairWhenZoomed:boolean;
 };
 export type Accessibility={highContrast:boolean;reducedMotion:boolean;density:'compact'|'comfortable'|'spacious';textScale:number};
 export type Reactive={enabled:boolean;firePulse:boolean;gapExpansion:boolean;opacityPulse:boolean;hideOnAds:boolean;emergencyHotkey:string;fireDurationMs:number;fireAmplitudePercent:number;adsTransitionMs:number;adsMode:'hold'|'toggle'};
@@ -60,6 +61,7 @@ export type CommandPayloads = {
   setLoadoutHotkeys:{nextHotkey:string;previousHotkey:string;favoriteHotkey:string};
   setMonitorOffset:{monitorId:string;x:number;y:number};
   setLibraryMetadata:{collections:LibraryCollection[];tags:Record<string,string[]>};
+  setTypingState:{active:boolean};
   findDuplicates:Record<string,never>;
 };
 export type CommandName = keyof CommandPayloads;

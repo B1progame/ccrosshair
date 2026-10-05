@@ -1,0 +1,508 @@
+{
+  "baseline_version": "1.2.3",
+  "checked_date": "2026-10-05",
+  "count": 100,
+  "unique_geometry_count": 100,
+  "presets": [
+    {
+      "id": "classic_cross",
+      "name": "Classic Cross",
+      "geometryFingerprint": "c550f37c218846ac03e19efab6a948761a91b253bc28ff3c1cf596464313020a"
+    },
+    {
+      "id": "dot_micro",
+      "name": "Dot Micro",
+      "geometryFingerprint": "118eba0f07928cce42a41d6725217aae76f7e0dd7c1d962536cf0f7a66242da4"
+    },
+    {
+      "id": "dot_pro",
+      "name": "Dot Pro",
+      "geometryFingerprint": "ef1787a41a7cc65744df8ea83cfd81073024b03472a856092ac51db3007525f4"
+    },
+    {
+      "id": "circle_cross_compact",
+      "name": "Circle Cross Compact",
+      "geometryFingerprint": "a391acbcc4c46cd3d29f415d718a99a588607008b01562a3a67f324dfa61daba"
+    },
+    {
+      "id": "circle_cross_balanced",
+      "name": "Circle Cross Balanced",
+      "geometryFingerprint": "f7d93a92d5484272685f2833d3f2c44de1060eb1cb43a0ef1e2e20d9cf78d842"
+    },
+    {
+      "id": "circle_cross_wide",
+      "name": "Circle Cross Wide",
+      "geometryFingerprint": "7729da70d327c6f90e011280d5f0eb72cc9c2e6a387f52df54645556b604fa2f"
+    },
+    {
+      "id": "ring_dot_precision",
+      "name": "Ring Dot Precision",
+      "geometryFingerprint": "74e2b7ba02e79d71b5eec7747c62ad29197468913eab5c4ee593d63a8a10be68"
+    },
+    {
+      "id": "ring_tactical",
+      "name": "Ring Tactical",
+      "geometryFingerprint": "66f0217f12cdb54d323851fd62e15d3558036abafb6aa2b84e55b89d8d556afd"
+    },
+    {
+      "id": "classic_t_style",
+      "name": "Classic T-Style",
+      "geometryFingerprint": "410bc5c7b43d31bdc07dba73b62efdc4435c13528e6754bf619178c2c70d97a2"
+    },
+    {
+      "id": "classic_long_gap",
+      "name": "Classic Long Gap",
+      "geometryFingerprint": "079a470358d95471615f86526a86529565d6fda1714e7dce53aca5b8aac19899"
+    },
+    {
+      "id": "classic_short_gap",
+      "name": "Classic Tight Gap",
+      "geometryFingerprint": "2fe8f69d49fab7deae6f23255a6203020fd61c8825d674a28c9caabbf03fb88c"
+    },
+    {
+      "id": "classic_heavy",
+      "name": "Classic Heavy",
+      "geometryFingerprint": "8f7ae2e3db91bdb3fee1c6ae6c5a984c396e08c393041a18ad0c1c2789cd3cd4"
+    },
+    {
+      "id": "classic_rotated",
+      "name": "Classic Rotated",
+      "geometryFingerprint": "2a62cda904f12943cbcec07a4815f77e19964075e4bb3ba9f944ccd3960c4110"
+    },
+    {
+      "id": "bracket_small",
+      "name": "Bracket Small",
+      "geometryFingerprint": "f1ad2fa0b07db7b380f0a2c716c0d1bc3150933b92d52d53c094ee99ce797482"
+    },
+    {
+      "id": "bracket_balanced",
+      "name": "Bracket Balanced",
+      "geometryFingerprint": "49c0947ddc0f9a93c1533318421954ba4ec57343c71f2ac05df8232120f7453a"
+    },
+    {
+      "id": "bracket_open",
+      "name": "Bracket Open",
+      "geometryFingerprint": "ecfb6cadd1dbd39869823254ecae86ea0d42f89d7c403ae959ff0fc34824975b"
+    },
+    {
+      "id": "bracket_heavy",
+      "name": "Bracket Heavy",
+      "geometryFingerprint": "27921dba713d2ea875f006bf330b14f7109cb0f1706aff17b1b7cf47624fe689"
+    },
+    {
+      "id": "selector_corner",
+      "name": "Selector Corner",
+      "geometryFingerprint": "8cb1001833cf7af0e7d68276d0a48dc8b4779c8ed8c495bb79b2383f0969c609"
+    },
+    {
+      "id": "diamond_micro",
+      "name": "Diamond Micro",
+      "geometryFingerprint": "b7c4c3e72a687ac9f43834bd177ccc3a68331168cc672f30f484f7924f80fb69"
+    },
+    {
+      "id": "diamond_balanced",
+      "name": "Diamond Balanced",
+      "geometryFingerprint": "a10a06718c32b04dc0aa81ffd7ca40862eea291cfd0e8ae937c16b1914f35e77"
+    },
+    {
+      "id": "diamond_fine",
+      "name": "Diamond Fine",
+      "geometryFingerprint": "03d60ec9a8775760f9eefed7601393ed9f97a97dba86d45c65ab3632cd89e518"
+    },
+    {
+      "id": "diamond_heavy",
+      "name": "Diamond Heavy",
+      "geometryFingerprint": "27c44dc2b72f1ae411ceaff9a04f65825db548d41024221f23ce8c1d140f52e8"
+    },
+    {
+      "id": "square_hollow",
+      "name": "Square Hollow",
+      "geometryFingerprint": "2d1eba966de14390a4814c784bb2614bb47084e544b7feceb8bcd5f1d4875281"
+    },
+    {
+      "id": "square_dot",
+      "name": "Square Dot",
+      "geometryFingerprint": "37e16f13b994adc19e7e4616f9328df0295da1c29c07200895511c12436d4e71"
+    },
+    {
+      "id": "square_wide",
+      "name": "Square Wide",
+      "geometryFingerprint": "c85206125f2b6d939a45c9536fd27bf3fe6564b43a400cfc26e69bf57ff85c09"
+    },
+    {
+      "id": "square_heavy",
+      "name": "Square Heavy",
+      "geometryFingerprint": "ff3bceb40f0f7d0051a806565ecdaf89995d5c6fdffae5157d20e9fc0f46c374"
+    },
+    {
+      "id": "sniper_scope_min",
+      "name": "Sniper Scope Min",
+      "geometryFingerprint": "8afaa644f768e811394282040e4255f9a082b21319e7f85e6dfd4261a46a2b0b"
+    },
+    {
+      "id": "sniper_scope_dot",
+      "name": "Sniper Scope Dot",
+      "geometryFingerprint": "9b1abe6b066a2c1b199aa5c74f46b759dac8556eea0a0791257acefd4e1f8078"
+    },
+    {
+      "id": "target_ring_light",
+      "name": "Target Ring Light",
+      "geometryFingerprint": "952ceae8f68e67d32156c146031c6507d925f4fd073d40cc259af4dad2228244"
+    },
+    {
+      "id": "target_ring_focus",
+      "name": "Target Ring Focus",
+      "geometryFingerprint": "e99c8f2b28ce59d46df6e4030fbb88f04ba00e91ded99b975b3af8e68a02e433"
+    },
+    {
+      "id": "focus_reticle",
+      "name": "Focus Reticle",
+      "geometryFingerprint": "e969eb34243c9adc873e797defcfbcd3632d2d5084cec169ccdce761e2c99e13"
+    },
+    {
+      "id": "focus_reticle_heavy",
+      "name": "Focus Reticle Heavy",
+      "geometryFingerprint": "983d48c1e8b84693cf51eba080939a26a25efa987d546a2da93b8505e6bab944"
+    },
+    {
+      "id": "pvp_pixel_plus",
+      "name": "PvP Pixel Plus",
+      "geometryFingerprint": "15cdbeae2753ac339c08ff9fac46ff76d2f32e1d85d2057be06edc91cabb2063"
+    },
+    {
+      "id": "pvp_pixel_dot",
+      "name": "PvP Pixel Dot",
+      "geometryFingerprint": "3245dee921a5084fb2711c52c42289f3b838d356c58e318e6c2e721050ae79e3"
+    },
+    {
+      "id": "pvp_square_dot",
+      "name": "PvP Square Dot",
+      "geometryFingerprint": "960c290d20b25b12b20dbc42dc779b7a4c73bf5d60097a8d4475b556a57428af"
+    },
+    {
+      "id": "pvp_bracket",
+      "name": "PvP Bracket",
+      "geometryFingerprint": "c63a07c9d942d4927486dd9fd16cfede46aebd15149d904a4dbdd9bf3f6ba318"
+    },
+    {
+      "id": "pvp_ring",
+      "name": "PvP Ring",
+      "geometryFingerprint": "27067c660f6f0bf3f411408ec7d665bddcaf82e494177e85204fb30d8c90f602"
+    },
+    {
+      "id": "cross_a5_g1_w1_open",
+      "name": "Cross 5 / Gap 1 / 1px Open",
+      "geometryFingerprint": "1763de1328a29ab05aa60356a440af6ca4920fe066c51095c79c744793cff710"
+    },
+    {
+      "id": "cross_a5_g1_w1_dot",
+      "name": "Cross 5 / Gap 1 / 1px Dot",
+      "geometryFingerprint": "ace4ea234eb8bbc60196f8c906549244e22936c187e70ba5bb8e1f3b1f542529"
+    },
+    {
+      "id": "cross_a5_g1_w1_t",
+      "name": "Cross 5 / Gap 1 / 1px T",
+      "geometryFingerprint": "368cd55e33bd334cf6ac9287d1e6014673f2c6fa9dd02afa2bb33e91e380f34d"
+    },
+    {
+      "id": "cross_a6_g3_w1_open",
+      "name": "Cross 6 / Gap 3 / 1px Open",
+      "geometryFingerprint": "3db71fbd22611e67d0b735ae32374e073b216d2712f0aea018de17f04c191759"
+    },
+    {
+      "id": "cross_a6_g3_w1_dot",
+      "name": "Cross 6 / Gap 3 / 1px Dot",
+      "geometryFingerprint": "afea32844165f0a8a55f59078e52c87a7ce10b3f7e35cb6eea177a94c104859b"
+    },
+    {
+      "id": "cross_a6_g3_w1_t",
+      "name": "Cross 6 / Gap 3 / 1px T",
+      "geometryFingerprint": "bdc6e5b858f1054b3ab72d33ea0ab18dd9cbf93faa6ee8b3e05999d2af514758"
+    },
+    {
+      "id": "cross_a8_g5_w1_open",
+      "name": "Cross 8 / Gap 5 / 1px Open",
+      "geometryFingerprint": "01c9753c351d2b9d9ecdd1cd42bb2bb1825727e4eb7e28326876dd3d6dc96e21"
+    },
+    {
+      "id": "cross_a8_g5_w1_dot",
+      "name": "Cross 8 / Gap 5 / 1px Dot",
+      "geometryFingerprint": "e4c62dcf03eaf364658dd81269cf5c42a2afbfa0e2d7edad9626c3b5b240dc54"
+    },
+    {
+      "id": "cross_a8_g5_w1_t",
+      "name": "Cross 8 / Gap 5 / 1px T",
+      "geometryFingerprint": "3e8d34c60d664217688190a6d7454e7b9dd284628d8d80162d0d9aef5bad4a58"
+    },
+    {
+      "id": "precision_3_0_1",
+      "name": "Precision Dot 3-0-1",
+      "geometryFingerprint": "bb63319b910677fa0829a0d07b33e9d66c590c027866c3622f4c9713c9e38e2c"
+    },
+    {
+      "id": "ring_3_0_1",
+      "name": "Ring Sight 3-0-1",
+      "geometryFingerprint": "9075b81f530cad49096c2184b9516964551326e739bd2d047eb4df767175862d"
+    },
+    {
+      "id": "bracket_3_0_1",
+      "name": "Bracket 3-0-1",
+      "geometryFingerprint": "7eaa01d6ff8f0afb2b6d39636777bfbb95cb72da87b3182a8f2b3fb6b33044e7"
+    },
+    {
+      "id": "chevron_3_0_1",
+      "name": "Chevron 3-0-1",
+      "geometryFingerprint": "603b2e0ef3232d389b9aeed1a82381a6805c52806f2f51a89b881c88e1dcc2cd"
+    },
+    {
+      "id": "sniper_3_0_1",
+      "name": "Sniper Guide 3-0-1",
+      "geometryFingerprint": "7d32e6cdcc019c69268ff483cceaf3e294d817a581bd3e6bff9b7f50b3497ec8"
+    },
+    {
+      "id": "precision_5_2_1",
+      "name": "Precision Dot 5-2-1",
+      "geometryFingerprint": "0b38e234acfcd72c64b8b65506b963785f7d912dec47abef4127cd98cba59f29"
+    },
+    {
+      "id": "ring_5_2_1",
+      "name": "Ring Sight 5-2-1",
+      "geometryFingerprint": "3f0a6ddc8c40ee146477380e30177024443709ba9af1f6c3d1c3a2c3dbd663be"
+    },
+    {
+      "id": "bracket_5_2_1",
+      "name": "Bracket 5-2-1",
+      "geometryFingerprint": "00c2c6debc8534c12aaf8b832997af2c980f73b33a392cf6fa2ea4a282d15e92"
+    },
+    {
+      "id": "chevron_5_2_1",
+      "name": "Chevron 5-2-1",
+      "geometryFingerprint": "41965eef17097100c32e520f70571806507ca107c9921912e491d8f65be44480"
+    },
+    {
+      "id": "sniper_5_2_1",
+      "name": "Sniper Guide 5-2-1",
+      "geometryFingerprint": "4e7da6e29c6bdfe29619ceb34d0ceea36a84aa3fc3dcb6ca3253a2249b60efaa"
+    },
+    {
+      "id": "precision_7_4_1",
+      "name": "Precision Dot 7-4-1",
+      "geometryFingerprint": "0fbb288252182009ed086f031520e90230789172e104490f3f58273df3073165"
+    },
+    {
+      "id": "ring_7_4_1",
+      "name": "Ring Sight 7-4-1",
+      "geometryFingerprint": "15744d440b22a4ac2e160d85c517b53651aef6f6872859b9da25080cb2e34d33"
+    },
+    {
+      "id": "bracket_7_4_1",
+      "name": "Bracket 7-4-1",
+      "geometryFingerprint": "a7abdecc6924a6e7a0eb0cefdb1febe00a362787304b4ef0f89617d8bb0e8003"
+    },
+    {
+      "id": "chevron_7_4_1",
+      "name": "Chevron 7-4-1",
+      "geometryFingerprint": "843addddafc5c798e2827d1d7bf05dfa565837e068571ea77da9386a201c7674"
+    },
+    {
+      "id": "sniper_7_4_1",
+      "name": "Sniper Guide 7-4-1",
+      "geometryFingerprint": "c9ee2adbc80c7ae8bf0b879db1de95827cef47a63865df0c8b58ea6de1892a6b"
+    },
+    {
+      "id": "precision_9_6_2",
+      "name": "Precision Dot 9-6-2",
+      "geometryFingerprint": "4766665f29294cb73dd0dad54e70e4cc91dc5af9cadb45ca1e17245b9538b1b3"
+    },
+    {
+      "id": "ring_9_6_2",
+      "name": "Ring Sight 9-6-2",
+      "geometryFingerprint": "5599a8e6e63c5f1cb42c30897df2534eb3956af5395b9beda3764235346133f8"
+    },
+    {
+      "id": "bracket_9_6_2",
+      "name": "Bracket 9-6-2",
+      "geometryFingerprint": "62a2965fd5dc52e9145bc88dada63b17bfeb9d9095544ffceb614b4b73b76014"
+    },
+    {
+      "id": "chevron_9_6_2",
+      "name": "Chevron 9-6-2",
+      "geometryFingerprint": "bcabab2b0f5e30d4b4b5dfca05877d291f39680bb9c7f3e4c317d82877b22e42"
+    },
+    {
+      "id": "sniper_9_6_2",
+      "name": "Sniper Guide 9-6-2",
+      "geometryFingerprint": "3796615db9886830d226d7cc86930eb868002daab0c866f7a49c03ed9a6fe77c"
+    },
+    {
+      "id": "precision_12_8_2",
+      "name": "Precision Dot 12-8-2",
+      "geometryFingerprint": "d692a57b1f7a05e2cee66e1d067a8d435bc767000f4834be5f1058a1b9cebb90"
+    },
+    {
+      "id": "ring_12_8_2",
+      "name": "Ring Sight 12-8-2",
+      "geometryFingerprint": "8645b6f6080c2ea61f5bc33e8e76de4211a50436f7b47f54a81eb5626bf24b75"
+    },
+    {
+      "id": "bracket_12_8_2",
+      "name": "Bracket 12-8-2",
+      "geometryFingerprint": "e5cf360849bf02ce612b68b31a1892b3b6890fb05a70b1b570cb12c1a953cfd7"
+    },
+    {
+      "id": "chevron_12_8_2",
+      "name": "Chevron 12-8-2",
+      "geometryFingerprint": "e012e754a6b5f10d93996c43d3c2901c3cb2b16ea477b6445dff55be75bdc765"
+    },
+    {
+      "id": "sniper_12_8_2",
+      "name": "Sniper Guide 12-8-2",
+      "geometryFingerprint": "75a3ec64780c1db6a03592f54af8aa9df8fa4b8ccf6043258df1db0aa0d41a15"
+    },
+    {
+      "id": "precision_15_10_3",
+      "name": "Precision Dot 15-10-3",
+      "geometryFingerprint": "d74d5b1b31196acab4ceed2da76be9ce6167a4ad427f87e757d7799ba70f1c10"
+    },
+    {
+      "id": "ring_15_10_3",
+      "name": "Ring Sight 15-10-3",
+      "geometryFingerprint": "4934dd278a4ce81f41ce5106685d0152f23ad6afcd632788698ff7b57fec15f1"
+    },
+    {
+      "id": "bracket_15_10_3",
+      "name": "Bracket 15-10-3",
+      "geometryFingerprint": "3d07e030066e8fcd39ba17490779f9dcc5162f17487e70c9f4a3ccf828e58b6b"
+    },
+    {
+      "id": "chevron_15_10_3",
+      "name": "Chevron 15-10-3",
+      "geometryFingerprint": "a6621ecde631beb8ba7612b622429dca50a7d97fafc3f89e98e1ebc260c51b41"
+    },
+    {
+      "id": "sniper_15_10_3",
+      "name": "Sniper Guide 15-10-3",
+      "geometryFingerprint": "b859e6a28b5f437bbf388cae567bb9b49082d69a05c3fc78f6aebff96d5fbd41"
+    },
+    {
+      "id": "precision_18_4_1",
+      "name": "Precision Dot 18-4-1",
+      "geometryFingerprint": "47a4ec719b400bde0a74f38fb983fb8b70ec0b387a57f8bc363747b13fbddb94"
+    },
+    {
+      "id": "ring_18_4_1",
+      "name": "Ring Sight 18-4-1",
+      "geometryFingerprint": "8201b555d9c454fdf168ae8a34bceb0eff322686f58b90346a4c61ed10fabf39"
+    },
+    {
+      "id": "bracket_18_4_1",
+      "name": "Bracket 18-4-1",
+      "geometryFingerprint": "ce100139914da726f42348a364e16c282f5470f61346e3bb510e91bca348bd52"
+    },
+    {
+      "id": "chevron_18_4_1",
+      "name": "Chevron 18-4-1",
+      "geometryFingerprint": "70bb7ce8f2076b24379f89e32f23dfa4db09d9bb0844af3ddca7843499f5e10b"
+    },
+    {
+      "id": "sniper_18_4_1",
+      "name": "Sniper Guide 18-4-1",
+      "geometryFingerprint": "b92a89d7c2bc1ee68b0ee5c87d64d33933eb922a1d0431c79f0975b45cf5b75b"
+    },
+    {
+      "id": "precision_22_12_2",
+      "name": "Precision Dot 22-12-2",
+      "geometryFingerprint": "f2aabc039a35b976ff0a3237e06b5a2b08b485d054a2b133646627ae1041db3c"
+    },
+    {
+      "id": "ring_22_12_2",
+      "name": "Ring Sight 22-12-2",
+      "geometryFingerprint": "6d87e6215a056a4ea816970cb4eb45897c14f7ce37135d65cd7b53fbf54e0e43"
+    },
+    {
+      "id": "bracket_22_12_2",
+      "name": "Bracket 22-12-2",
+      "geometryFingerprint": "2ae057016d6986bc7d4c697c96dca366f0a13882ec175bf0e813ce7d0c984c4b"
+    },
+    {
+      "id": "chevron_22_12_2",
+      "name": "Chevron 22-12-2",
+      "geometryFingerprint": "f411a72dfc2431f49404a2ce903692450a284f57d6410e325bf7793851786a6c"
+    },
+    {
+      "id": "sniper_22_12_2",
+      "name": "Sniper Guide 22-12-2",
+      "geometryFingerprint": "3172d85a4aba9b4a7b1fb538b7eeb0cdef38eca184633d7f31f2a5ef3d54b941"
+    },
+    {
+      "id": "cross_a11_g7_w1_open",
+      "name": "Cross 11 / Gap 7 / 1px Open",
+      "geometryFingerprint": "eb9395c836ab65933db460d3683f079ccc3495d61258707bae7c8a40c44580a6"
+    },
+    {
+      "id": "cross_a11_g7_w1_dot",
+      "name": "Cross 11 / Gap 7 / 1px Dot",
+      "geometryFingerprint": "562e1da20241292299ba18cdb003547370c72846d4bbf2f129d0403ae7d3ce08"
+    },
+    {
+      "id": "cross_a11_g7_w1_t",
+      "name": "Cross 11 / Gap 7 / 1px T",
+      "geometryFingerprint": "a144c70484c8ca7896c1882c7d2ddbc7b83fe8efd2e89e24d9069b2e13ac954c"
+    },
+    {
+      "id": "cross_a14_g3_w1_open",
+      "name": "Cross 14 / Gap 3 / 1px Open",
+      "geometryFingerprint": "1acd6cbebfb9ee41d618484028171b297ddaa559bc31499b44c47177ec4dcf5f"
+    },
+    {
+      "id": "cross_a14_g3_w1_dot",
+      "name": "Cross 14 / Gap 3 / 1px Dot",
+      "geometryFingerprint": "5b835df32cbe4e59bfff020f1e2abe5530c2abbc257320b1e9ce35f85a0e4c38"
+    },
+    {
+      "id": "cross_a14_g3_w1_t",
+      "name": "Cross 14 / Gap 3 / 1px T",
+      "geometryFingerprint": "6bad3fd1030938560e481a710a8f5c1dcb43f517cea967817195f329344fc762"
+    },
+    {
+      "id": "cross_a7_g9_w1_open",
+      "name": "Cross 7 / Gap 9 / 1px Open",
+      "geometryFingerprint": "6cf9734c2827df359d698146f6554859b4810b8ea89239188ab6cd9105f0e7d0"
+    },
+    {
+      "id": "cross_a7_g9_w1_dot",
+      "name": "Cross 7 / Gap 9 / 1px Dot",
+      "geometryFingerprint": "7a20356cf8f3f19875c9bf3b38f490797829052fc96149f306787b16da7e1b7f"
+    },
+    {
+      "id": "cross_a7_g9_w1_t",
+      "name": "Cross 7 / Gap 9 / 1px T",
+      "geometryFingerprint": "9e230092a0244523286a8a0b2bbc9543163f732f0bbad54c8e0ae2aaf471caa0"
+    },
+    {
+      "id": "cross_a12_g14_w2_open",
+      "name": "Cross 12 / Gap 14 / 2px Open",
+      "geometryFingerprint": "43e9f5517564d324efbd2955d99e25f5b6a60dc13faa62b2ac0c9e96e0ea203b"
+    },
+    {
+      "id": "cross_a12_g14_w2_dot",
+      "name": "Cross 12 / Gap 14 / 2px Dot",
+      "geometryFingerprint": "d7ce75dcb9ab24e01f4a5d6861ce52fafe774473c59df8f5745dfdfad3da8ada"
+    },
+    {
+      "id": "cross_a12_g14_w2_t",
+      "name": "Cross 12 / Gap 14 / 2px T",
+      "geometryFingerprint": "11cb6291696b947ccb95e9bc1e2136ff201b64e428f704db358a8b91b2501586"
+    },
+    {
+      "id": "cross_a16_g6_w2_open",
+      "name": "Cross 16 / Gap 6 / 2px Open",
+      "geometryFingerprint": "4c4b4f4ae03e567fdcc86abf24e66792ca5bf02f5c584ba07f4eda14f8257515"
+    },
+    {
+      "id": "cross_a16_g6_w2_dot",
+      "name": "Cross 16 / Gap 6 / 2px Dot",
+      "geometryFingerprint": "008b74404ecb7a7cdd0dc9cba6fdb681b8633f03a8b7e72052d7a27ecd5fcbf0"
+    }
+  ]
+}

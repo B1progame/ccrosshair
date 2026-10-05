@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.4.0 - 2026-10-05
+
+### Crosshair Library
+- Added 210 original, locally authored pixel designs: 150 practical patterns and 60 novelty/joke crosshairs.
+- Added a provenance-rich offline manifest and wired every design through catalog search, preview, serialization, and native overlay drawing.
+- Preserved all 100 v1.2.3 catalog entries.
+
+### Creator and Zoom Fixes
+- Changed creator saves to return the actual saved style ID and surface filesystem failures so a failed write cannot look successful.
+- Set `N` as the default Zoom hotkey and migrate the former shipped `Ctrl+Alt+Z` default to `N`; text entry in the control app suppresses the hotkey.
+- Added a Zoom setting to hide the crosshair while the magnifier is visible and restore it afterward.
+- Fixed the Qt transform enum used by the Zoom worker, which previously prevented processed frames from being delivered.
+- Kept local checksum-verified 3× AI upscaling in the Quality mode, with DirectML/CPU selection and smooth-scaling fallback.
+- Fixed the blank control window: register a valid default port and CORS/fetch permissions for the app-local URL scheme, and explicitly allow that scheme in the React bundle's content security policy.
+
+### Verification
+- 66 Python unit tests passed, including actual custom-grid rendering/round-trip checks for all 210 new designs, a WebEngine React-mount regression, and local AI inference.
+- Frontend TypeScript and production bundle build passed.
+- Windows executable and installer build/launch checks are part of the release validation.
+
 ## 1.2.3 - 2026-10-05
 
 ### Bug Fixes

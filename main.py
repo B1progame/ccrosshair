@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 import sys
+import traceback
+from pathlib import Path
 
 
 def _add_src_to_path() -> None:
@@ -13,9 +15,18 @@ def _add_src_to_path() -> None:
 
 def main() -> int:
     _add_src_to_path()
-    from crosshair_overlay import run
+    try:
+        from crosshair_overlay import run
 
-    return run()
+        return run()
+    except Exception:
+        log_root = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "CrosshairOverlay" / "logs"
+        try:
+            log_root.mkdir(parents=True, exist_ok=True)
+            (log_root / "startup-error.log").write_text(traceback.format_exc(), encoding="utf-8")
+        except OSError:
+            pass
+        raise
 
 
 if __name__ == "__main__":

@@ -1,10 +1,17 @@
 from __future__ import annotations
 
 import unittest
+import json
+from pathlib import Path
+
+from PySide6.QtCore import QRect, Qt
+from PySide6.QtGui import QColor, QImage, QPainter
+from PySide6.QtWidgets import QApplication
 
 from crosshair_overlay.app_settings import AppSettings
 from crosshair_overlay.crosshairs.catalog import build_builtin_catalog
 from crosshair_overlay.crosshairs.io import definition_from_dict, definition_to_dict
+from crosshair_overlay.overlay_renderer import draw_overlay_style
 from crosshair_overlay.input_reactivity import pulse_envelope
 from crosshair_overlay.zoom_controls import effective_zoom_max_percent, stepped_zoom_percent
 
@@ -15,13 +22,58 @@ class CatalogFeatureTests(unittest.TestCase):
         geometries = {
             (item.style.shape, item.style.arm_length, item.style.gap, item.style.thickness,
              item.style.center_dot, item.style.center_dot_size, item.style.circle_radius,
-             item.style.circle_thickness, item.style.t_style, item.style.outline_enabled)
+             item.style.circle_thickness, item.style.t_style, item.style.outline_enabled,
+             item.style.custom_grid_size, item.style.custom_cell_size,
+             tuple(item.style.custom_filled_cells))
             for item in catalog.values()
         }
         self.assertGreaterEqual(len(catalog), 100)
         self.assertEqual(len(catalog), len(geometries))
         self.assertTrue(any(item.style.shape.value == "chevron" for item in catalog.values()))
         self.assertTrue(any(item.style.shape.value == "sniper" for item in catalog.values()))
+
+    def test_catalog_adds_two_hundred_distinct_originals_and_fifty_joke_designs(self) -> None:
+        baseline = json.loads(Path("tests/fixtures/catalog_baseline_v1.2.3.json").read_text(encoding="utf-8"))
+        baseline_ids = {item["id"] for item in baseline["presets"]}
+        catalog = build_builtin_catalog()
+
+        def geometry(item):
+            style = item.style
+            return (
+                style.shape.value, style.arm_length, style.gap, style.thickness,
+                style.center_dot, style.center_dot_size, style.circle_radius,
+                style.circle_thickness, style.custom_grid_size,
+                tuple(style.custom_filled_cells), style.custom_cell_size,
+                style.t_style, style.outline_enabled, style.outline_thickness,
+                style.rotation_degrees,
+            )
+
+        new_items = [item for style_id, item in catalog.items() if style_id not in baseline_ids]
+        self.assertGreaterEqual(len(new_items), 200)
+        self.assertGreaterEqual(len(catalog), baseline["count"] + 200)
+        self.assertTrue(baseline_ids.issubset(catalog))
+        self.assertEqual(len(catalog), len({geometry(item) for item in catalog.values()}))
+        self.assertEqual(len(new_items), len({geometry(item) for item in new_items}))
+        jokes = [item for item in new_items if "joke" in item.tags]
+        self.assertGreaterEqual(len(jokes), 50)
+        for query in ("joke", "heart", "glasses", "cat"):
+            self.assertTrue(any(query in item.searchable_text for item in jokes), query)
+
+    def test_all_new_catalog_patterns_render_and_round_trip_as_native_pixel_grids(self) -> None:
+        QApplication.instance() or QApplication([])
+        catalog = build_builtin_catalog()
+        originals = [item for item in catalog.values() if item.source_type == "original_catalog"]
+        self.assertEqual(len(originals), 210)
+        for definition in originals:
+            image = QImage(32, 32, QImage.Format.Format_ARGB32)
+            image.fill(Qt.GlobalColor.transparent)
+            painter = QPainter(image)
+            draw_overlay_style(painter, QRect(0, 0, 32, 32), definition.style)
+            painter.end()
+            opaque = sum(image.pixelColor(x, y).alpha() > 0 for y in range(32) for x in range(32))
+            self.assertGreaterEqual(opaque, len(definition.style.custom_filled_cells), definition.style_id)
+            restored = definition_from_dict(definition_to_dict(definition))
+            self.assertEqual(restored.style.custom_filled_cells, definition.style.custom_filled_cells)
 
     def test_original_preset_metadata_and_appearance_round_trip(self) -> None:
         source = build_builtin_catalog()["classic_cross"]
@@ -53,6 +105,17 @@ class CatalogFeatureTests(unittest.TestCase):
         self.assertTrue(settings.beta_zoom.cleanup_enabled)
         self.assertEqual(settings.beta_zoom.cleanup_radius, 24)
         self.assertEqual(settings.beta_zoom.cleanup_strength, 0)
+
+    def test_zoom_can_persist_crosshair_visibility_preference(self) -> None:
+        settings = AppSettings.from_dict({"beta_zoom": {"hide_crosshair_when_zoomed": True}})
+        self.assertTrue(settings.beta_zoom.hide_crosshair_when_zoomed)
+
+    def test_zoom_defaults_to_n_hotkey_and_migrates_previous_shipped_default(self) -> None:
+        self.assertEqual(AppSettings().beta_zoom.hotkey_sequence, "N")
+        restored = AppSettings.from_dict({"beta_zoom": {"hotkey_sequence": "CTRL+ALT+Z"}})
+        self.assertEqual(restored.beta_zoom.hotkey_sequence, "N")
+        custom = AppSettings.from_dict({"beta_zoom": {"hotkey_sequence": "CTRL+SHIFT+F8"}})
+        self.assertEqual(custom.beta_zoom.hotkey_sequence, "CTRL+SHIFT+F8")
 
     def test_legacy_game_profiles_migrate_to_named_loadouts(self) -> None:
         settings = AppSettings.from_dict({"game_profiles": [

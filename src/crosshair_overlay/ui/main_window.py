@@ -119,6 +119,8 @@ class MainWindow(QWidget):
         self._games_status = ""
         self._beta_monitors: list[tuple[str, str]] = []
         self._creator_model: dict | None = None
+        self.creator_save_handler = None
+        self.keyboard_entry_active = False
         self._web_page = "home"
         self._current_page_id = "home"
         self._web_revision = 0
@@ -285,6 +287,7 @@ class MainWindow(QWidget):
             "cleanupRadius": settings.cleanup_radius,
             "cleanupStrength": settings.cleanup_strength,
             "cleanupPreview": settings.cleanup_preview,
+            "hideCrosshairWhenZoomed": settings.hide_crosshair_when_zoomed,
         }
 
     def _style_payload(self, item: CrosshairDefinition) -> dict:

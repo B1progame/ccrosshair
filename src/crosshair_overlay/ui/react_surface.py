@@ -26,7 +26,12 @@ def register_react_scheme() -> None:
     scheme = QWebEngineUrlScheme()
     scheme.setName(b"crosshair")
     scheme.setSyntax(QWebEngineUrlScheme.Syntax.HostAndPort)
-    scheme.setFlags(QWebEngineUrlScheme.Flag.SecureScheme | QWebEngineUrlScheme.Flag.LocalScheme)
+    scheme.setDefaultPort(80)
+    scheme.setFlags(
+        QWebEngineUrlScheme.Flag.SecureScheme
+        | QWebEngineUrlScheme.Flag.CorsEnabled
+        | QWebEngineUrlScheme.Flag.FetchApiAllowed
+    )
     QWebEngineUrlScheme.registerScheme(scheme)
 
 

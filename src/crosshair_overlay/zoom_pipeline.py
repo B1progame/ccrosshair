@@ -181,7 +181,7 @@ class ZoomFrameProcessor(QThread):
                 except Exception as exc:  # noqa: BLE001
                     self._ai_error = type(exc).__name__
             if result is None:
-                transform = QImage.TransformationMode.FastTransformation if job.mode == "fast" else QImage.TransformationMode.SmoothTransformation
+                transform = Qt.TransformationMode.FastTransformation if job.mode == "fast" else Qt.TransformationMode.SmoothTransformation
                 result = source.scaled(
                     max(1, width),
                     max(1, height),

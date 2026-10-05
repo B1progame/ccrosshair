@@ -114,7 +114,7 @@ class BetaZoomSettings:
     sidebar_enabled: bool = False
     live_enabled: bool = False
     zoom_enabled: bool = False
-    hotkey_sequence: str = "CTRL+ALT+Z"
+    hotkey_sequence: str = "N"
     display_mode: str = "monitor"
     target_monitor_id: str = "same_as_game"
     position_x_percent: int = 50
@@ -132,6 +132,7 @@ class BetaZoomSettings:
     cleanup_radius: int = 5
     cleanup_strength: int = 100
     cleanup_preview: bool = False
+    hide_crosshair_when_zoomed: bool = False
 
 
 @dataclass
@@ -277,9 +278,11 @@ class AppSettings:
         raw_beta = safe.get("beta_zoom", {})
         if not isinstance(raw_beta, dict):
             raw_beta = {}
-        hotkey_sequence = "CTRL+ALT+Z"
+        hotkey_sequence = "N"
         if "hotkey_sequence" in raw_beta:
             hotkey_sequence = str(raw_beta.get("hotkey_sequence", "")).strip()
+            if hotkey_sequence.casefold() == "ctrl+alt+z":
+                hotkey_sequence = "N"  # Replace the shipped default with the requested N shortcut.
         display_mode = str(raw_beta.get("display_mode", "monitor")).strip().lower() or "monitor"
         if display_mode not in {"crosshair", "monitor"}:
             display_mode = "monitor"
@@ -314,6 +317,7 @@ class AppSettings:
             cleanup_radius=bounded_int(raw_beta.get("cleanup_radius"), 5, 1, 24),
             cleanup_strength=bounded_int(raw_beta.get("cleanup_strength"), 100, 0, 100),
             cleanup_preview=safe_bool(raw_beta.get("cleanup_preview"), False),
+            hide_crosshair_when_zoomed=safe_bool(raw_beta.get("hide_crosshair_when_zoomed"), False),
         )
 
         raw_accessibility = safe.get("accessibility", {})

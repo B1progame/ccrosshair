@@ -3,7 +3,7 @@
 #endif
 
 #ifndef AppVersion
-  #define AppVersion "1.2.1"
+  #define AppVersion "1.4.0"
 #endif
 
 #ifndef AppPublisher

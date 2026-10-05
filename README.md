@@ -6,18 +6,19 @@ It is built with `PySide6`, uses Windows-native overlay behavior, and stores you
 
 **Highlights**
 - Always-on-top crosshair overlay with live style updates
-- Built-in crosshair library with preview, detail editing, favorites, and export
+- 310 crosshairs with search, preview, detail editing, favorites, and export
 - Creator page for designing your own grid-based crosshairs
 - Import and export support for `.xhair`, `.xpack`, and legacy `.chgrid` / `.chpack`
 - Game automation with Steam and Epic library detection plus manual `.exe` imports
 - Per-game crosshair profiles and optional fullscreen-only behavior
 - System tray support so the app can stay running in the background
 - Theme controls, accent color customization, and shared global size controls
-- Experimental Beta Zoom page with hotkey-based live zoom preview
+- Experimental Zoom with the `N` hotkey, local AI super-resolution, and optional overlay hiding
 
-**Latest Update (1.2.3)**
-- Fixed the bundled Qt runtime lookup and replaced the app and installer icon with the supplied crosshair artwork.
-- Made zoom resizing asynchronous with latest-frame handling, keyboard zoom steps, and runtime diagnostics.
+**Latest Update (1.4.0)**
+- Added 210 original offline pixel designs, including 60 novelty crosshairs, with search, preview, export, and native overlay rendering.
+- Fixed creator save errors, made `N` the default Zoom shortcut, ignored it while app text inputs are focused, and added an option to hide the overlay while Zoom is visible.
+- Fixed a Qt worker error that stopped Zoom quality frames and verified local 3× AI upscaling.
 - Full details: see `CHANGELOG.md`
 
 **Platform**
@@ -29,7 +30,7 @@ It is built with `PySide6`, uses Windows-native overlay behavior, and stores you
 - `Creator`: build your own crosshair visually and save it back into the library
 - `Games`: open a game-specific menu, assign a crosshair, and enable auto-apply rules
 - `Settings`: choose theme mode, accent color, storage location, and beta feature visibility
-- `Beta`: experimental zoom overlay page that appears only when enabled in Settings
+- `Zoom`: optional live magnifier with configurable quality, cleanup preview, hotkeys, and placement controls
 
 **Quick Start**
 1. Run `setup.bat`

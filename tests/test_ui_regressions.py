@@ -26,6 +26,7 @@ from crosshair_overlay.crosshairs import CrosshairLibrary
 from crosshair_overlay.storage_paths import StoragePaths
 from crosshair_overlay.theme_manager import ThemeManager
 from crosshair_overlay.ui.bridge_router import BridgeCommandRouter
+from crosshair_overlay.hotkey_utils import parse_hotkey
 
 
 class UiRegressionTests(unittest.TestCase):
@@ -175,6 +176,17 @@ class UiRegressionTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             router.dispatch("setMonitorOffset", {"monitorId": "screen:0", "x": 129, "y": 0})
 
+    def test_typing_state_bridge_accepts_only_boolean_and_updates_native_guard(self) -> None:
+        class Window:
+            keyboard_entry_active = False
+
+        window = Window()
+        router = BridgeCommandRouter(window)
+        router.dispatch("setTypingState", {"active": True})
+        self.assertTrue(window.keyboard_entry_active)
+        with self.assertRaises(ValueError):
+            router.dispatch("setTypingState", {"active": "true"})
+
     def test_fullscreen_detection_ignores_one_tick_flaps(self) -> None:
         controller = AppController.__new__(AppController)
         controller._last_fullscreen_state = False
@@ -239,6 +251,100 @@ class UiRegressionTests(unittest.TestCase):
             controller._zoom_tick()
         self.assertTrue(controller.hidden)
 
+    def test_zoom_hotkey_is_ignored_while_react_text_entry_has_focus(self) -> None:
+        class WindowHarness:
+            keyboard_entry_active = True
+
+        class ControllerHarness:
+            _zoom_tick = AppController._zoom_tick
+
+            def __init__(self):
+                self._settings = AppSettings()
+                self._settings.beta_zoom.sidebar_enabled = True
+                self._settings.beta_zoom.zoom_enabled = True
+                self._settings.beta_zoom.live_enabled = False
+                self._main_window = WindowHarness()
+                self._zoom_hotkey = object()
+                self.hidden = False
+
+            def _hide_zoom_overlay(self):
+                self.hidden = True
+
+            def _current_zoom_source_frame(self):
+                raise AssertionError("text entry must suppress the zoom hotkey before capture")
+
+        controller = ControllerHarness()
+        with patch("crosshair_overlay.app.is_hotkey_pressed", return_value=True):
+            controller._zoom_tick()
+        self.assertTrue(controller.hidden)
+
+    def test_n_is_a_supported_global_zoom_key(self) -> None:
+        spec = parse_hotkey(AppSettings().beta_zoom.hotkey_sequence)
+        self.assertIsNotNone(spec)
+        self.assertEqual(spec.key_code, ord("N"))
+
+    def test_zoom_hides_and_restores_crosshair_when_preference_is_enabled(self) -> None:
+        class Overlay:
+            visible = True
+
+            def isVisible(self):
+                return self.visible
+
+            def hide(self):
+                self.visible = False
+
+            def show(self):
+                self.visible = True
+
+        class ControllerHarness:
+            _update_zoom_crosshair_visibility = AppController._update_zoom_crosshair_visibility
+
+            def __init__(self):
+                self._settings = AppSettings()
+                self._settings.beta_zoom.hide_crosshair_when_zoomed = True
+                self._overlay = Overlay()
+                self._zoom_crosshair_was_visible = False
+                self._overlay_visible = True
+                self._emergency_hidden = False
+                self._ads_suppressed = False
+
+        controller = ControllerHarness()
+        controller._update_zoom_crosshair_visibility(True)
+        self.assertFalse(controller._overlay.visible)
+        self.assertTrue(controller._zoom_crosshair_was_visible)
+        controller._update_zoom_crosshair_visibility(False)
+        self.assertTrue(controller._overlay.visible)
+        self.assertFalse(controller._zoom_crosshair_was_visible)
+
+    def test_creator_save_bridge_propagates_filesystem_failure(self) -> None:
+        class Signal:
+            def emit(self, *_args):
+                raise AssertionError("fire-and-forget creator save must not be used")
+
+        class Window:
+            creator_save_requested = Signal()
+
+            @staticmethod
+            def creator_save_handler(_model, _activate):
+                raise OSError("storage is read-only")
+
+        router = BridgeCommandRouter(Window())
+        model = {
+            "format": "crosshair-overlay-creator-v3",
+            "version": 3,
+            "name": "Saved Test",
+            "grid_size": 32,
+            "creation_mode": "draw",
+            "color_hex": "#FFFFFF",
+            "filled_cells": [[15, 15]],
+            "style_id": "",
+            "created_at": "",
+            "updated_at": "",
+            "layers": [],
+        }
+        with self.assertRaisesRegex(OSError, "read-only"):
+            router.dispatch("creatorSave", {"model": model, "activate": False})
+
     def test_new_creator_save_avoids_builtin_ids_and_existing_creator_is_updated(self) -> None:
         class ControllerHarness:
             _creator_style_id = AppController._creator_style_id
@@ -292,15 +398,18 @@ class UiRegressionTests(unittest.TestCase):
                 patch("crosshair_overlay.app.QMessageBox.warning") as warning:
             controller = ControllerHarness(Path(tmp))
             source = CreatorCrosshair("Classic Cross", 32, "#67D4AE", [(15, 15)])
-            controller.save_creator_crosshair(source, activate_now=False)
+            first_result = controller.save_creator_crosshair(source, activate_now=False)
             self.assertFalse(warning.called, warning.call_args)
             saved = controller._main_window.creator_model
             self.assertEqual(saved.style_id, "classic_cross_2")
+            self.assertEqual(first_result, {"accepted": True, "styleId": saved.style_id, "name": "Classic Cross"})
             destination = controller._storage_paths.creator_definition_path(saved.style_id)
             self.assertTrue(destination.exists())
 
             saved.name = "Renamed Creator Cross"
-            controller.save_creator_crosshair(saved, activate_now=False)
+            updated_result = controller.save_creator_crosshair(saved, activate_now=False)
+            self.assertTrue(updated_result["accepted"])
+            self.assertEqual(updated_result["styleId"], saved.style_id)
             self.assertEqual(controller._main_window.creator_model.style_id, saved.style_id)
             self.assertEqual(len([d for d in controller._definitions.values() if d.source_type == "creator_grid"]), 1)
 

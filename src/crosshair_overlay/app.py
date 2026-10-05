@@ -204,6 +204,7 @@ class AppController(QObject):
             recent_style_ids=self._settings.recent_style_ids,
             recent_crosshair_colors=self._settings.recent_crosshair_colors,
         )
+        self._main_window.creator_save_handler = self.save_creator_crosshair
         self._main_window.set_quick_switch_hotkeys(
             self._settings.quick_switch_next_hotkey,
             self._settings.quick_switch_previous_hotkey,
@@ -254,6 +255,7 @@ class AppController(QObject):
         self._zoom_reset_hotkey = parse_hotkey(self._settings.beta_zoom.zoom_reset_hotkey_sequence)
         self._zoom_adjust_held = {"in": False, "out": False, "reset": False}
         self._zoom_showing = False
+        self._zoom_crosshair_was_visible = False
         self._wheel_hook = GlobalMouseWheelHook(
             should_handle=lambda: bool(self._zoom_showing and self._settings.beta_zoom.zoom_enabled and self._active_game_profile_id),
             consume_input=lambda: bool(self._settings.beta_zoom.consume_mouse_wheel),
@@ -311,7 +313,6 @@ class AppController(QObject):
         self._main_window.import_pack_requested.connect(self.import_pack)
         self._main_window.export_pack_requested.connect(self.export_current_style)
         self._main_window.export_selection_requested.connect(self.export_selected_pack)
-        self._main_window.creator_save_requested.connect(self.save_creator_crosshair)
         self._main_window.creator_export_requested.connect(self.export_creator_crosshair)
         self._main_window.send_to_editor_requested.connect(self.send_style_to_editor)
         self._main_window.sidebar_collapsed_changed.connect(self.set_sidebar_collapsed)
@@ -782,6 +783,8 @@ class AppController(QObject):
             )
             self._gpu_runtime_adaptation.reset(status)
         self._settings.beta_zoom = normalized
+        if previous_settings.hide_crosshair_when_zoomed and not normalized.hide_crosshair_when_zoomed:
+            self._update_zoom_crosshair_visibility(False)
         self._zoom_hotkey = parse_hotkey(normalized.hotkey_sequence)
         self._zoom_in_hotkey = parse_hotkey(normalized.zoom_in_hotkey_sequence)
         self._zoom_out_hotkey = parse_hotkey(normalized.zoom_out_hotkey_sequence)
@@ -1246,9 +1249,9 @@ class AppController(QObject):
         QApplication.processEvents()
         return dialog
 
-    def save_creator_crosshair(self, model: object, activate_now: bool) -> None:
+    def save_creator_crosshair(self, model: object, activate_now: bool) -> dict[str, object]:
         if not isinstance(model, CreatorCrosshair):
-            return
+            raise ValueError("Invalid creator crosshair")
         try:
             style = creator_to_overlay_style(model)
             style_id = self._creator_style_id(model, style.display_name)
@@ -1275,9 +1278,9 @@ class AppController(QObject):
             if activate_now:
                 self.set_overlay_style(style.style_id)
             self._refresh_games_page()
-            QMessageBox.information(self._main_window, "Saved", f"Saved creator crosshair '{style.display_name}'.")
         except Exception as exc:  # noqa: BLE001
-            QMessageBox.warning(self._main_window, "Save Failed", f"Could not save creator crosshair.\n{exc}")
+            raise OSError(f"Could not save creator crosshair: {exc}") from exc
+        return {"accepted": True, "styleId": style.style_id, "name": style.display_name}
 
     def export_creator_crosshair(self, model: object, destination: str) -> None:
         if not isinstance(model, CreatorCrosshair):
@@ -1679,7 +1682,11 @@ class AppController(QObject):
         allow_zoom = self._settings.beta_zoom.sidebar_enabled and self._settings.beta_zoom.zoom_enabled
         if allow_zoom and (live_zoom_enabled or getattr(self, "_zoom_capture_active", False)):
             self._poll_zoom_adjustment_hotkeys()
-        hotkey_down = allow_zoom and is_hotkey_pressed(self._zoom_hotkey)
+        hotkey_down = (
+            allow_zoom
+            and not getattr(self._main_window, "keyboard_entry_active", False)
+            and is_hotkey_pressed(self._zoom_hotkey)
+        )
         if not live_zoom_enabled and not hotkey_down:
             self._hide_zoom_overlay()
             return
@@ -1737,6 +1744,7 @@ class AppController(QObject):
         target_rect = self._zoom_target_rect_current
         if target_rect is None:
             return
+        self._update_zoom_crosshair_visibility(True)
         animate = bool(
             self._settings.beta_zoom.animation_enabled
             and not self._settings.accessibility.reduced_motion
@@ -1993,6 +2001,21 @@ class AppController(QObject):
         self._zoom_showing = False
         self._zoom_capture_active = False
         self._zoom_target_rect_current = None
+        self._update_zoom_crosshair_visibility(False)
+
+    def _update_zoom_crosshair_visibility(self, zoom_active: bool) -> None:
+        if zoom_active:
+            if not self._settings.beta_zoom.hide_crosshair_when_zoomed or self._zoom_crosshair_was_visible:
+                return
+            self._zoom_crosshair_was_visible = bool(self._overlay.isVisible())
+            if self._zoom_crosshair_was_visible:
+                self._overlay.hide()
+            return
+        if not self._zoom_crosshair_was_visible:
+            return
+        self._zoom_crosshair_was_visible = False
+        if self._overlay_visible and not self._emergency_hidden and not self._ads_suppressed:
+            self._overlay.show()
 
     def _resolve_active_game_profile(self, running_names: set[str]) -> GameProfile | None:
         self._ambiguous_profile_matches = []
