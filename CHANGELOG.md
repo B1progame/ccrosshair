@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.5.1 - 2026-10-05
+
+- Fixed the blank control window by queuing the first Qt WebEngine load until after the native window is shown, avoiding a Windows WebEngine crash during the window's show event.
+
 ## 1.5.0 - 2026-10-05
 
 - Fixed the blank native control window on Windows systems where QtWebEngine loses its D3D compositor context; the lightweight React UI now uses reliable software rendering.

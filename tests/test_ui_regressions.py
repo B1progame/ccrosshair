@@ -17,7 +17,14 @@ from PySide6.QtWidgets import QApplication
 
 from crosshair_overlay.config import OverlayStyle
 from crosshair_overlay.app import AppController, _WorkerReaper, _next_ads_state, _parse_optional_rgba
-from crosshair_overlay.app_settings import AppSettings, GameLoadout, GameProfile, ReactiveSettings
+from crosshair_overlay.app_settings import (
+    AccessibilitySettings,
+    AppSettings,
+    BetaZoomSettings,
+    GameLoadout,
+    GameProfile,
+    ReactiveSettings,
+)
 from crosshair_overlay.creator.models import CreatorCrosshair, CreatorLayer
 from crosshair_overlay.creator.conversion import creator_to_overlay_style
 from crosshair_overlay.crosshairs.catalog import build_builtin_catalog
@@ -26,6 +33,7 @@ from crosshair_overlay.crosshairs import CrosshairLibrary
 from crosshair_overlay.storage_paths import StoragePaths
 from crosshair_overlay.theme_manager import ThemeManager
 from crosshair_overlay.ui.bridge_router import BridgeCommandRouter
+from crosshair_overlay.ui.main_window import MainWindow
 from crosshair_overlay.zoom_controls import ZoomActivationLatch
 from crosshair_overlay.hotkey_utils import parse_hotkey
 
@@ -40,6 +48,25 @@ class UiRegressionTests(unittest.TestCase):
         manager = ThemeManager(self.app)
         self.assertEqual(manager._contrast_text("#FFFF00"), "#111615")
         self.assertEqual(manager._contrast_text("#223344"), "#FFFFFF")
+
+    def test_main_window_starts_web_surface_only_after_becoming_visible(self) -> None:
+        definition = self.definitions["classic_cross"]
+        window = MainWindow(
+            OrderedDict([(definition.style_id, definition)]), definition.style_id,
+            100, "dark", "#67D4AE", 100, "", False, False, False,
+            BetaZoomSettings(), False, AccessibilitySettings(), ReactiveSettings(), [], [],
+        )
+        surface = window._react_surface
+        self.assertFalse(surface._started)
+
+        with patch.object(surface, "start") as start_surface, patch(
+            "crosshair_overlay.ui.main_window.QTimer.singleShot"
+        ) as schedule_start:
+            window.show()
+            schedule_start.assert_called_once_with(0, surface.start)
+            start_surface.assert_not_called()
+        window.hide()
+        window.deleteLater()
 
     def test_game_loadout_appearance_survives_settings_round_trip(self) -> None:
         settings = AppSettings(game_profiles=[GameProfile(

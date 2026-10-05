@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import OrderedDict
 from pathlib import Path
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import QTimer, Signal
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
@@ -148,7 +148,6 @@ class MainWindow(QWidget):
         layout.addWidget(self._react_surface, 1)
         layout.addWidget(self._load_error)
         self.setLayout(layout)
-        self._react_surface.start()
 
     def navigate_to(self, page_id: str) -> None:
         page = self._PAGE_ALIASES.get(page_id)
@@ -513,6 +512,11 @@ class MainWindow(QWidget):
 
     def showEvent(self, event) -> None:  # noqa: N802
         super().showEvent(event)
+        # QWebEngine can finish loading while its parent window is still
+        # hidden during startup. Freezing that not-yet-presented page can
+        # leave the first visible window black on some Windows graphics
+        # stacks. Start Chromium only once the native surface is on screen.
+        QTimer.singleShot(0, self._react_surface.start)
         self._set_web_lifecycle(active=True)
 
     def allow_close_once(self) -> None:
