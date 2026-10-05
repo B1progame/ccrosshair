@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass, replace
 from enum import Enum
+from functools import cached_property
 from typing import Any
 
 from ..config import OverlayStyle
@@ -34,6 +35,13 @@ class CrosshairDefinition:
     source_type: str = "builtin"
     source_path: str = ""
     is_favorite: bool = False
+    aliases: tuple[str, ...] = ()
+    origin_game: str = "Generic FPS"
+    author: str = ""
+    source_url: str = ""
+    reuse_status: str = "original"
+    approximate: bool = False
+    catalog_version: int = 1
 
     @property
     def style_id(self) -> str:
@@ -42,6 +50,12 @@ class CrosshairDefinition:
     @property
     def display_name(self) -> str:
         return self.style.display_name
+
+    @cached_property
+    def searchable_text(self) -> str:
+        """Immutable catalog fields normalized once for repeated UI searches."""
+        return " ".join((self.display_name, self.family, self.source_type, self.description,
+                         self.origin_game, self.author, *self.aliases, *self.tags)).casefold()
 
     def with_style(self, style: OverlayStyle) -> "CrosshairDefinition":
         return replace(self, style=style)
@@ -62,6 +76,7 @@ class EditableField:
     CIRCLE_THICKNESS = SettingSpec("circle_thickness", "Circle Thickness", SettingKind.INT, 1, 14, 1)
     OUTLINE_ENABLED = SettingSpec("outline_enabled", "Outline", SettingKind.BOOL)
     OUTLINE_THICKNESS = SettingSpec("outline_thickness", "Outline Thickness", SettingKind.INT, 1, 10, 1)
+    OUTLINE_COLOR = SettingSpec("outline_rgba", "Outline Color", SettingKind.COLOR)
     ROTATION = SettingSpec("rotation_degrees", "Rotation", SettingKind.FLOAT, -180, 180, 1)
     T_STYLE = SettingSpec("t_style", "T Style", SettingKind.BOOL)
 

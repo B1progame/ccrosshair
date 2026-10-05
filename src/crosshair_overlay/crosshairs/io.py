@@ -118,12 +118,34 @@ def definition_to_dict(item: CrosshairDefinition) -> dict:
         "source_type": item.source_type,
         "source_path": item.source_path,
         "is_favorite": item.is_favorite,
+        "aliases": list(item.aliases),
+        "origin_game": item.origin_game,
+        "author": item.author,
+        "source_url": item.source_url,
+        "reuse_status": item.reuse_status,
+        "approximate": item.approximate,
+        "catalog_version": item.catalog_version,
     }
 
 
 def definition_from_dict(payload: dict) -> CrosshairDefinition:
     if "style" not in payload:
         raise ValueError("Missing style payload")
+    if not isinstance(payload["style"], dict):
+        raise ValueError("Style must be a JSON object")
+    style_id = payload["style"].get("style_id", "")
+    if not isinstance(style_id, str) or not style_id.strip() or len(style_id) > 128:
+        raise ValueError("Style identifier is malformed")
+    for field_name in ("tags", "aliases", "editable_settings"):
+        value = payload.get(field_name, [])
+        if not isinstance(value, list) or len(value) > 100:
+            raise ValueError(f"Invalid {field_name} list")
+        if field_name != "editable_settings" and any(not isinstance(item, str) or len(item) > 128 for item in value):
+            raise ValueError(f"Invalid {field_name} value")
+    for field_name in ("family", "description", "origin_game", "author", "source_url", "reuse_status"):
+        value = payload.get(field_name, "")
+        if not isinstance(value, str) or len(value) > 2048:
+            raise ValueError(f"Invalid {field_name}")
     editable_raw = payload.get("editable_settings", [])
     editable: list[SettingSpec] = []
     if isinstance(editable_raw, list):
@@ -148,6 +170,13 @@ def definition_from_dict(payload: dict) -> CrosshairDefinition:
         source_type=str(payload.get("source_type", "plugin")),
         source_path=str(payload.get("source_path", "")),
         is_favorite=bool(payload.get("is_favorite", False)),
+        aliases=tuple(str(x) for x in payload.get("aliases", []) if isinstance(x, (str, int, float))),
+        origin_game=str(payload.get("origin_game", "")),
+        author=str(payload.get("author", "")),
+        source_url=str(payload.get("source_url", "")),
+        reuse_status=str(payload.get("reuse_status", "unknown")),
+        approximate=bool(payload.get("approximate", False)),
+        catalog_version=max(1, int(payload.get("catalog_version", 1))),
     )
 
 

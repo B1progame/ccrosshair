@@ -1,7 +1,7 @@
 export type Style = {
   id: string; name: string; family: string; source: string; description: string; tags: string[];
-  favorite: boolean; color: string; opacity: number;
-  shape: 'classic_cross'|'dot'|'circle_cross'|'custom_grid'|'bracket'|'diamond'|'ring'|'square';
+  favorite: boolean; color: string; opacity: number; aliases:string[]; originGame:string; author:string; sourceUrl:string; reuseStatus:string; approximate:boolean; catalogVersion:number;
+  shape: 'classic_cross'|'dot'|'circle_cross'|'custom_grid'|'bracket'|'diamond'|'ring'|'square'|'chevron'|'sniper';
   dot: boolean; active: boolean; armLength: number; gap: number; thickness: number;
   circleRadius: number; circleThickness: number; centerDotSize: number; tStyle: boolean;
   rotationDegrees: number; outlineEnabled: boolean; outlineThickness: number;
@@ -12,17 +12,30 @@ export type Style = {
 export type ZoomSettings = {
   sidebarEnabled:boolean; liveEnabled:boolean; zoomEnabled:boolean; hotkeySequence:string;
   displayMode:'monitor'|'crosshair'; targetMonitorId:string; positionXPercent:number; positionYPercent:number;
-  zoomPercent:number; animationEnabled:boolean; animationDurationMs:number;
+  zoomPercent:number; runtimeMode:'quiet'|'eco'|'fast'|'balanced'|'quality'; autoAdaptEnabled:boolean;
+  zoomInHotkeySequence:string; zoomOutHotkeySequence:string; zoomResetHotkeySequence:string;
+  animationEnabled:boolean; animationDurationMs:number; consumeMouseWheel:boolean;
+  cleanupEnabled:boolean; cleanupRadius:number; cleanupStrength:number; cleanupPreview:boolean;
 };
+export type Accessibility={highContrast:boolean;reducedMotion:boolean;density:'compact'|'comfortable'|'spacious';textScale:number};
+export type Reactive={enabled:boolean;firePulse:boolean;gapExpansion:boolean;opacityPulse:boolean;hideOnAds:boolean;emergencyHotkey:string;fireDurationMs:number;fireAmplitudePercent:number;adsTransitionMs:number;adsMode:'hold'|'toggle'};
+export type CreatorLayer={id:string;name:string;primitive:'draw'|'cross'|'dot'|'ring'|'bracket';visible:boolean;filled_cells:Array<[number,number]>};
 export type CreatorModel = {
-  format:'crosshair-overlay-creator-v2'; version:number; name:string; grid_size:number; creation_mode:'draw'|'pixel';
-  color_hex:string; filled_cells:Array<[number,number]>; style_id:string; created_at:string; updated_at:string;
+  format:'crosshair-overlay-creator-v2'|'crosshair-overlay-creator-v3'; version:number; name:string; grid_size:number; creation_mode:'draw'|'pixel';
+  color_hex:string; filled_cells:Array<[number,number]>; style_id:string; created_at:string; updated_at:string; layers?:CreatorLayer[];
 };
-export type Game = {id:string; title:string; source:string; executablePath:string; iconPath:string; styleId:string; enabled:boolean};
+export type GameLoadout={loadout_id:string;name:string;style_id:string;zoom_percent:number;fire_pulse:boolean;gap_expansion:boolean;opacity_pulse:boolean;hide_on_ads:boolean;fire_duration_ms:number;fire_amplitude_percent:number;ads_transition_ms:number;color_hex:string;opacity_percent:number;outline_color_hex:string;outline_opacity_percent:number;ads_style_id:string;ads_color_hex:string;ads_opacity_percent:number;ads_outline_color_hex:string;ads_outline_opacity_percent:number};
+export type Game = {id:string; title:string; source:string; executablePath:string; iconPath:string; styleId:string; enabled:boolean;loadouts:GameLoadout[];activeLoadoutId:string};
+export type LibraryCollection={id:string;name:string;styleIds:string[]};
 export type SettingsSnapshot = {
   selectedSize:number; globalSize:number; theme:string; accent:string; autoUpdate:boolean; startupTray:boolean;
   fullscreenAuto:boolean; gameAutoSwitch:boolean; storagePath:string; betaVisible:boolean; sidebarCollapsed:boolean; zoom:ZoomSettings;
   monitors:Array<{id:string; name:string}>;
+  zoomDiagnostics:{backend:string;model:string;mode:string;captureWidth:number;captureHeight:number;processingMs:number;frameAgeP50Ms:number;frameAgeP95Ms:number;outputFps:number;droppedFrames:number;frames:number;effectiveZoomMax:number;cleanup:string;cleanupConfidence:number;adaptation:string};
+  accessibility:Accessibility; reactive:Reactive; recentStyleIds:string[]; recentCrosshairColors:string[];
+  quickSwitchNextHotkey:string;quickSwitchPreviousHotkey:string;quickSwitchFavoriteHotkey:string;
+  monitorOffsets:Record<string,{x:number;y:number}>;
+  libraryCollections:LibraryCollection[];libraryTags:Record<string,string[]>;
 };
 export type Snapshot = {
   version:1; revision:number; theme:string; resolvedTheme:'dark'|'light'; accent:string; appVersion:string; runtime:string;
@@ -40,8 +53,14 @@ export type CommandPayloads = {
   setGameAutoSwitch:{enabled:boolean}; setBetaVisible:{enabled:boolean}; importPack:Record<string,never>; exportStyle:{styleId:string};
   exportCurrent:Record<string,never>; exportSelection:{styleIds:string[]}; creatorSave:{model:CreatorModel;activate:boolean};
   creatorExport:{model:CreatorModel}; setGameProfile:{gameId:string;styleId:string;enabled:boolean};
+  updateGameLoadouts:{gameId:string;loadouts:GameLoadout[];activeLoadoutId:string}; selectGameLoadout:{gameId:string;loadoutId:string};
   importGame:Record<string,never>; rescanGames:Record<string,never>; setZoom:{settings:ZoomSettings};
-  chooseStorage:Record<string,never>; checkUpdates:Record<string,never>; resetSettings:Record<string,never>;
+  chooseStorage:Record<string,never>; checkUpdates:Record<string,never>; resetSettings:Record<string,never>; exportDiagnostics:Record<string,never>;
+  setAccessibility:{settings:Accessibility}; setReactive:{settings:Reactive};
+  setLoadoutHotkeys:{nextHotkey:string;previousHotkey:string;favoriteHotkey:string};
+  setMonitorOffset:{monitorId:string;x:number;y:number};
+  setLibraryMetadata:{collections:LibraryCollection[];tags:Record<string,string[]>};
+  findDuplicates:Record<string,never>;
 };
 export type CommandName = keyof CommandPayloads;
 type Reply<T=unknown> = {id:string;ok:boolean;result?:T;error?:{code:string;message:string}};

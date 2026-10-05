@@ -64,6 +64,13 @@ class CrosshairLibrary:
             source_type="custom",
             source_path=str(target),
             is_favorite=clean.is_favorite,
+            aliases=clean.aliases,
+            origin_game=clean.origin_game,
+            author=clean.author,
+            source_url=clean.source_url,
+            reuse_status=clean.reuse_status,
+            approximate=clean.approximate,
+            catalog_version=clean.catalog_version,
         )
         self._definitions[persisted.style_id] = persisted
         return persisted
@@ -97,6 +104,10 @@ class CrosshairLibrary:
                         source_type=source_type,
                         source_path=str(file),
                         is_favorite=definition.is_favorite,
+                        aliases=definition.aliases, origin_game=definition.origin_game,
+                        author=definition.author, source_url=definition.source_url,
+                        reuse_status=definition.reuse_status, approximate=definition.approximate,
+                        catalog_version=definition.catalog_version,
                     ),
                     definitions,
                 )
@@ -125,6 +136,7 @@ class CrosshairLibrary:
                         editable_settings=(),
                         source_type=source_type,
                         source_path=str(file),
+                        aliases=(model.name.casefold().replace(" ", "-"),),
                     ),
                     definitions,
                 )
@@ -150,6 +162,10 @@ class CrosshairLibrary:
                         source_type="plugin_pack",
                         source_path=str(file),
                         is_favorite=resolved.is_favorite,
+                        aliases=resolved.aliases, origin_game=resolved.origin_game,
+                        author=resolved.author, source_url=resolved.source_url,
+                        reuse_status=resolved.reuse_status, approximate=resolved.approximate,
+                        catalog_version=resolved.catalog_version,
                     )
             except Exception:
                 continue
@@ -184,6 +200,10 @@ class CrosshairLibrary:
                         source_type="custom",
                         source_path=str(file),
                         is_favorite=definition.is_favorite,
+                        aliases=definition.aliases, origin_game=definition.origin_game,
+                        author=definition.author, source_url=definition.source_url,
+                        reuse_status=definition.reuse_status, approximate=definition.approximate,
+                        catalog_version=definition.catalog_version,
                     ),
                     definitions,
                 )
@@ -234,4 +254,8 @@ class CrosshairLibrary:
             source_type=definition.source_type,
             source_path=definition.source_path,
             is_favorite=definition.is_favorite,
+            aliases=definition.aliases, origin_game=definition.origin_game,
+            author=definition.author, source_url=definition.source_url,
+            reuse_status=definition.reuse_status, approximate=definition.approximate,
+            catalog_version=definition.catalog_version,
         )

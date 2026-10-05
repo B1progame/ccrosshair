@@ -31,8 +31,14 @@ def _make(
         family=family,
         description=description,
         tags=tags,
-        editable_settings=editable,
+        editable_settings=tuple((*editable, EditableField.OUTLINE_COLOR)) if any(item.key == "outline_enabled" for item in editable) and not any(item.key == "outline_rgba" for item in editable) else editable,
         source_type="builtin",
+        aliases=(name.casefold().replace(" ", "-"), shape.value.replace("_", " ")),
+        origin_game="Generic FPS",
+        source_url="https://playvalorant.com/en-us/news/game-updates/valorant-patch-notes-5-04/",
+        reuse_status="original pattern; not a copied game asset",
+        approximate=False,
+        catalog_version=1,
     )
 
 
@@ -337,10 +343,10 @@ def build_builtin_catalog() -> "OrderedDict[str, CrosshairDefinition]":
             _make(
                 style_id,
                 name,
-                "Minecraft / PvP",
+                "Pixel PvP",
                 shape,
-                "Pixel-forward minimalist style from PvP pack families.",
-                ("minecraft", "pvp", "pixel"),
+                "Original pixel-forward minimalist marker intended for PvP use.",
+                ("pvp", "pixel", "original"),
                 _settings(
                     EditableField.COLOR,
                     EditableField.THICKNESS,
@@ -364,6 +370,71 @@ def build_builtin_catalog() -> "OrderedDict[str, CrosshairDefinition]":
         )
 
     for item in presets:
+        catalog[item.style_id] = item
+
+    # Add geometry variants (not color clones) so the offline library covers
+    # precision dots, open/T crosses, rings, brackets, chevrons and scope guides.
+    signatures = {
+        (p.style.shape, p.style.arm_length, p.style.gap, p.style.thickness,
+         p.style.center_dot, p.style.center_dot_size, p.style.circle_radius,
+         p.style.circle_thickness, p.style.t_style, p.style.outline_enabled)
+        for p in presets
+    }
+
+    def add_geometry(style_id: str, name: str, family: str, shape: OverlayShape,
+                     arm: int, gap: int, thickness: int, dot: bool = False,
+                     dot_size: int = 2, radius: int = 8, ring: int = 1,
+                     t_style: bool = False, outlined: bool = False,
+                     tags: tuple[str, ...] = ()) -> None:
+        sig = (shape, arm, gap, thickness, dot, dot_size, radius, ring, t_style, outlined)
+        if style_id in catalog or sig in signatures:
+            return
+        signatures.add(sig)
+        presets.append(_make(
+            style_id, name, family, shape,
+            f"Original {family.lower()} geometry preset with a distinct size and center layout.",
+            tuple(dict.fromkeys((*tags, family.casefold().replace(" / ", " "), "original"))),
+            _settings(EditableField.COLOR, EditableField.THICKNESS, EditableField.SIZE,
+                      EditableField.GAP, EditableField.CENTER_DOT, EditableField.CENTER_DOT_SIZE,
+                      EditableField.CIRCLE_RADIUS, EditableField.CIRCLE_THICKNESS,
+                      EditableField.OPACITY, EditableField.OUTLINE_ENABLED, EditableField.OUTLINE_THICKNESS),
+            arm_length=arm, gap=gap, thickness=thickness, center_dot=dot,
+            center_dot_size=dot_size, circle_radius=radius, circle_thickness=ring,
+            t_style=t_style, outline_enabled=outlined, outline_thickness=1,
+        ))
+
+    # Build stable size/gap/weight combinations, stopping at 100 total entries.
+    candidates = []
+    for arm, gap, weight in ((5, 1, 1), (6, 3, 1), (8, 5, 1), (11, 7, 1),
+                             (14, 3, 1), (7, 9, 1), (12, 14, 2), (16, 6, 2),
+                             (18, 10, 3), (4, 5, 1), (9, 0, 2), (15, 2, 1)):
+        for t_style, dot in ((False, False), (False, True), (True, False)):
+            candidates.append((f"cross_a{arm}_g{gap}_w{weight}_{'t' if t_style else 'dot' if dot else 'open'}",
+                               f"Cross {arm} / Gap {gap} / {weight}px" + (" T" if t_style else " Dot" if dot else " Open"),
+                               "Classic", OverlayShape.CLASSIC_CROSS, arm, gap, weight, dot, 2, 8, 1,
+                               t_style, True, ("cross", "static", "precision")))
+    for shape, family, tag in ((OverlayShape.DOT, "Precision Dot", "precision"),
+                               (OverlayShape.RING, "Ring Sight", "ring"),
+                               (OverlayShape.BRACKET, "Bracket", "bracket"),
+                               (OverlayShape.CHEVRON, "Chevron", "chevron"),
+                               (OverlayShape.SNIPER, "Sniper Guide", "sniper")):
+        for arm, gap, weight in ((3, 0, 1), (5, 2, 1), (7, 4, 1), (9, 6, 2),
+                                 (12, 8, 2), (15, 10, 3), (18, 4, 1), (22, 12, 2)):
+            candidates.append((f"{tag}_{arm}_{gap}_{weight}", f"{family} {arm}-{gap}-{weight}", family,
+                               shape, arm, gap, weight, shape == OverlayShape.DOT and arm > 5,
+                               max(1, arm // 3), max(3, arm), weight, False, arm in (7, 12), (tag, "aim")))
+    cross_variants, shape_variants = candidates[:36], candidates[36:]
+    shape_families = [shape_variants[index:index + 8] for index in range(0, len(shape_variants), 8)]
+    balanced_shapes = [family[round_index] for round_index in range(8) for family in shape_families]
+    # Add a few distinct cross variants, then cycle every family evenly before
+    # using the remaining cross variants. This preserves shape coverage at 100.
+    candidates = [*cross_variants[:9], *balanced_shapes, *cross_variants[9:]]
+    for data in candidates:
+        if len(presets) >= 100:
+            break
+        add_geometry(*data)
+
+    for item in presets[len(catalog):]:
         catalog[item.style_id] = item
 
     return catalog

@@ -12,4 +12,5 @@ class GameRowModel:
     icon_path: str
     assigned_style_id: str
     enabled: bool
-
+    loadouts: list[dict]
+    active_loadout_id: str

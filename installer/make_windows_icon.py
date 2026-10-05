@@ -21,19 +21,38 @@ def main() -> int:
         return 1
 
     app = QGuiApplication([])
-    renderer = QSvgRenderer(str(source))
-    if not renderer.isValid():
-        print(f"[icon] Invalid SVG: {source}")
-        return 1
-
     size = 256
     padding = 12
     image = QImage(size, size, QImage.Format.Format_ARGB32)
     image.fill(Qt.GlobalColor.transparent)
 
+    svg_renderer = QSvgRenderer(str(source)) if source.suffix.lower() == ".svg" else None
+    source_image = QImage(str(source)) if svg_renderer is None else None
+    if svg_renderer is not None and not svg_renderer.isValid():
+        print(f"[icon] Invalid SVG: {source}")
+        return 1
+    if source_image is not None and source_image.isNull():
+        print(f"[icon] Unsupported or invalid image: {source}")
+        return 1
+
     painter = QPainter(image)
     try:
-        renderer.render(painter, QRectF(padding, padding, size - (padding * 2), size - (padding * 2)))
+        rect = QRectF(padding, padding, size - (padding * 2), size - (padding * 2))
+        if svg_renderer is not None:
+            svg_renderer.render(painter, rect)
+        else:
+            assert source_image is not None
+            scaled = source_image.scaled(
+                int(rect.width()),
+                int(rect.height()),
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            painter.drawImage(
+                int((size - scaled.width()) / 2),
+                int((size - scaled.height()) / 2),
+                scaled,
+            )
     finally:
         painter.end()
 

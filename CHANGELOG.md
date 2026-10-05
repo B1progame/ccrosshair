@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2.3 - 2026-10-05
+
+### Bug Fixes
+- Pinned frozen-app Qt DLL and plugin lookup to the bundled PySide6 runtime to prevent import failures when another Qt installation is present.
+- Applied the supplied crosshair artwork to the app window, taskbar, and Windows installer icons.
+- Moved zoom-frame scaling off the GUI thread and discard queued frames after a zoom session ends.
+- Added keyboard zoom steps, reset, common zoom presets, and live frame/drop diagnostics.
+- Improved settings migration and preserve valid settings backups during corruption recovery.
+
 ## 1.2.2 - 2026-10-05
 
 ### Improvements
@@ -26,4 +35,3 @@
 - Fixed UI text clipping and overflow issues in Crosshairs and Detail views by adding scroll-safe layouts.
 - Fixed folder/button restyling refresh issues when switching filters.
 - Fixed favorite heart symbol rendering issues by using stable unicode escape sequences.
-

@@ -8,7 +8,7 @@ from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
 from ..app_metadata import APP_VERSION
-from ..app_settings import BetaZoomSettings
+from ..app_settings import AccessibilitySettings, BetaZoomSettings, ReactiveSettings
 from ..creator.models import CreatorCrosshair
 from ..crosshairs.models import CrosshairDefinition
 from .bridge_router import BridgeCommandRouter
@@ -47,9 +47,16 @@ class MainWindow(QWidget):
     fullscreen_auto_toggled = Signal(bool)
     game_auto_switch_toggled = Signal(bool)
     game_profile_updated = Signal(str, str, bool)
+    game_loadouts_updated = Signal(str, object, str)
+    game_loadout_selected = Signal(str, str)
     import_game_requested = Signal(str)
     rescan_games_requested = Signal()
     beta_zoom_settings_changed = Signal(object)
+    accessibility_changed = Signal(object)
+    reactive_settings_changed = Signal(object)
+    loadout_hotkeys_changed = Signal(str, str, str)
+    monitor_offset_changed = Signal(str, int, int)
+    library_metadata_changed = Signal(object, object)
     close_to_tray_requested = Signal()
 
     _PAGE_ALIASES = {
@@ -57,6 +64,7 @@ class MainWindow(QWidget):
         "my_crosshairs": "my_crosshairs", "crosshair_detail": "detail", "detail": "detail",
         "export": "export", "about": "about", "creator": "creator", "games": "games",
         "beta": "zoom", "zoom": "zoom", "settings": "settings",
+        "compatibility": "compatibility",
     }
 
     def __init__(
@@ -73,6 +81,10 @@ class MainWindow(QWidget):
         run_on_startup_tray: bool,
         beta_zoom_settings: BetaZoomSettings,
         sidebar_collapsed: bool,
+        accessibility_settings: AccessibilitySettings,
+        reactive_settings: ReactiveSettings,
+        recent_style_ids: list[str],
+        recent_crosshair_colors: list[str],
     ) -> None:
         super().__init__()
         self._definitions = definitions
@@ -88,6 +100,17 @@ class MainWindow(QWidget):
         self._auto_update_on_startup = auto_update_on_startup
         self._run_on_startup_tray = run_on_startup_tray
         self._beta_zoom_settings = beta_zoom_settings
+        self._accessibility_settings = accessibility_settings
+        self._reactive_settings = reactive_settings
+        self._recent_style_ids = recent_style_ids
+        self._recent_crosshair_colors = recent_crosshair_colors
+        self._quick_switch_next_hotkey = "CTRL+ALT+UP"
+        self._quick_switch_previous_hotkey = "CTRL+ALT+DOWN"
+        self._quick_switch_favorite_hotkey = "CTRL+ALT+F"
+        self._monitor_offsets: dict[str, dict[str, int]] = {}
+        self._library_collections: list[dict] = []
+        self._library_tags: dict[str, list[str]] = {}
+        self._zoom_diagnostics: dict[str, object] = {}
         self._beta_visible = beta_features_enabled
         self._sidebar_collapsed = bool(sidebar_collapsed)
         self._fullscreen_auto = False
@@ -106,7 +129,7 @@ class MainWindow(QWidget):
         self._bridge_router = BridgeCommandRouter(self)
 
         self.setWindowTitle("Crosshair Overlay")
-        logo_path = Path(__file__).resolve().parents[1] / "assets" / "logo.svg"
+        logo_path = Path(__file__).resolve().parents[1] / "assets" / "logo.png"
         if logo_path.exists():
             self.setWindowIcon(QIcon(str(logo_path)))
         self.resize(1180, 780)
@@ -190,6 +213,33 @@ class MainWindow(QWidget):
                 "betaVisible": self._beta_visible,
                 "sidebarCollapsed": self._sidebar_collapsed,
                 "zoom": self._zoom_payload(),
+                "accessibility": {
+                    "highContrast": self._accessibility_settings.high_contrast,
+                    "reducedMotion": self._accessibility_settings.reduced_motion,
+                    "density": self._accessibility_settings.density,
+                    "textScale": self._accessibility_settings.text_scale,
+                },
+                "reactive": {
+                    "enabled": self._reactive_settings.enabled,
+                    "firePulse": self._reactive_settings.fire_pulse,
+                    "gapExpansion": self._reactive_settings.gap_expansion,
+                    "opacityPulse": self._reactive_settings.opacity_pulse,
+                    "hideOnAds": self._reactive_settings.hide_on_ads,
+                    "emergencyHotkey": self._reactive_settings.emergency_hotkey,
+                    "fireDurationMs": self._reactive_settings.fire_duration_ms,
+                    "fireAmplitudePercent": self._reactive_settings.fire_amplitude_percent,
+                    "adsTransitionMs": self._reactive_settings.ads_transition_ms,
+                    "adsMode": self._reactive_settings.ads_mode,
+                },
+                "recentStyleIds": list(self._recent_style_ids),
+                "recentCrosshairColors": list(self._recent_crosshair_colors),
+                "monitorOffsets": dict(self._monitor_offsets),
+                "libraryCollections": [dict(item) for item in self._library_collections],
+                "libraryTags": {key: list(value) for key, value in self._library_tags.items()},
+                "quickSwitchNextHotkey": self._quick_switch_next_hotkey,
+                "quickSwitchPreviousHotkey": self._quick_switch_previous_hotkey,
+                "quickSwitchFavoriteHotkey": self._quick_switch_favorite_hotkey,
+                "zoomDiagnostics": dict(self._zoom_diagnostics),
                 "monitors": [{"id": mid, "name": name} for mid, name in self._beta_monitors],
             },
             "games": [
@@ -201,6 +251,8 @@ class MainWindow(QWidget):
                     "iconPath": game.icon_path,
                     "styleId": game.assigned_style_id,
                     "enabled": game.enabled,
+                    "loadouts": list(game.loadouts),
+                    "activeLoadoutId": game.active_loadout_id,
                 }
                 for game in self._games_data
             ],
@@ -221,8 +273,18 @@ class MainWindow(QWidget):
             "positionXPercent": settings.position_x_percent,
             "positionYPercent": settings.position_y_percent,
             "zoomPercent": settings.zoom_percent,
+            "runtimeMode": settings.runtime_mode,
+            "autoAdaptEnabled": settings.auto_adapt_enabled,
+            "zoomInHotkeySequence": settings.zoom_in_hotkey_sequence,
+            "zoomOutHotkeySequence": settings.zoom_out_hotkey_sequence,
+            "zoomResetHotkeySequence": settings.zoom_reset_hotkey_sequence,
             "animationEnabled": settings.animation_enabled,
             "animationDurationMs": settings.animation_duration_ms,
+            "consumeMouseWheel": settings.consume_mouse_wheel,
+            "cleanupEnabled": settings.cleanup_enabled,
+            "cleanupRadius": settings.cleanup_radius,
+            "cleanupStrength": settings.cleanup_strength,
+            "cleanupPreview": settings.cleanup_preview,
         }
 
     def _style_payload(self, item: CrosshairDefinition) -> dict:
@@ -234,7 +296,7 @@ class MainWindow(QWidget):
             "name": item.display_name,
             "family": item.family,
             "source": item.source_type,
-            "tags": list(item.tags),
+            "tags": list(dict.fromkeys((*item.tags, *self._library_tags.get(item.style_id, [])))),
             "favorite": item.is_favorite,
             "color": "#%02x%02x%02x" % tuple(rgba[:3]),
             "opacity": int(rgba[3]) if len(rgba) > 3 else 255,
@@ -258,6 +320,13 @@ class MainWindow(QWidget):
             "customFilledCells": [[x, y] for x, y in style.custom_filled_cells],
             "canvasSize": style.canvas_size,
             "description": item.description,
+            "aliases": list(item.aliases),
+            "originGame": item.origin_game,
+            "author": item.author,
+            "sourceUrl": item.source_url,
+            "reuseStatus": item.reuse_status,
+            "approximate": item.approximate,
+            "catalogVersion": item.catalog_version,
             "editableSettings": [
                 self._editable_payload(item, spec.key, spec.label, spec.kind.value, spec.minimum, spec.maximum, spec.step)
                 for spec in item.editable_settings
@@ -268,6 +337,8 @@ class MainWindow(QWidget):
     def _editable_payload(item: CrosshairDefinition, key: str, label: str, kind: str, minimum, maximum, step) -> dict:
         if key == "color_rgba":
             value = "#{:02X}{:02X}{:02X}".format(*item.style.color_rgba[:3])
+        elif key == "outline_rgba":
+            value = "#{:02X}{:02X}{:02X}".format(*item.style.outline_rgba[:3])
         elif key == "opacity":
             value = item.style.color_rgba[3]
         elif hasattr(item.style, key):
@@ -379,6 +450,42 @@ class MainWindow(QWidget):
         self._beta_zoom_settings = settings
         self._publish_web_event()
 
+    def set_accessibility_settings(self, settings: AccessibilitySettings) -> None:
+        self._accessibility_settings = settings
+        self._publish_web_event()
+
+    def set_reactive_settings(self, settings: ReactiveSettings) -> None:
+        self._reactive_settings = settings
+        self._publish_web_event()
+
+    def set_quick_switch_hotkeys(self, next_hotkey: str, previous_hotkey: str, favorite_hotkey: str) -> None:
+        self._quick_switch_next_hotkey = next_hotkey
+        self._quick_switch_previous_hotkey = previous_hotkey
+        self._quick_switch_favorite_hotkey = favorite_hotkey
+        self._publish_web_event()
+
+    def set_monitor_offsets(self, offsets: dict[str, dict[str, int]]) -> None:
+        self._monitor_offsets = {key: dict(value) for key, value in offsets.items()}
+        self._publish_web_event()
+
+    def set_library_metadata(self, collections: list[dict], tags: dict[str, list[str]]) -> None:
+        self._library_collections = [dict(item) for item in collections]
+        self._library_tags = {key: list(value) for key, value in tags.items()}
+        self._web_catalog_revision += 1
+        self._publish_web_event()
+
+    def set_recent_style_ids(self, style_ids: list[str]) -> None:
+        self._recent_style_ids = list(style_ids)
+        self._publish_web_event()
+
+    def set_recent_crosshair_colors(self, colors: list[str]) -> None:
+        self._recent_crosshair_colors = list(colors)
+        self._publish_web_event()
+
+    def set_zoom_diagnostics(self, diagnostics: dict[str, object]) -> None:
+        self._zoom_diagnostics = dict(diagnostics)
+        self._publish_web_event()
+
     def set_beta_monitor_choices(self, choices: list[tuple[str, str]]) -> None:
         self._beta_monitors = list(choices)
         self._publish_web_event()
@@ -404,4 +511,3 @@ class MainWindow(QWidget):
 
     def allow_close_once(self) -> None:
         self._allow_close_once = True
-

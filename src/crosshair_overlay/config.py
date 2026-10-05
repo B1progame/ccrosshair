@@ -16,6 +16,8 @@ class OverlayShape(str, Enum):
     DIAMOND = "diamond"
     RING = "ring"
     SQUARE = "square"
+    CHEVRON = "chevron"
+    SNIPER = "sniper"
 
 
 @dataclass(frozen=True)
@@ -74,6 +76,12 @@ class OverlayStyle:
         if self.shape == OverlayShape.DIAMOND:
             diamond_half = max(2.0, self.arm_length / 2.0 + self.gap / 3.0) + (line_stroke / 2.0)
             half_extents.append(diamond_half)
+
+        if self.shape == OverlayShape.CHEVRON:
+            half_extents.append(self.arm_length + line_stroke / 2.0)
+
+        if self.shape == OverlayShape.SNIPER:
+            half_extents.append(self.arm_length + line_stroke / 2.0)
 
         if self.shape == OverlayShape.CUSTOM_GRID:
             grid_span = self.custom_grid_size * max(1, self.custom_cell_size)

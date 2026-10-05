@@ -46,4 +46,3 @@ PySide6 remains the desktop host and owns overlay, zoom, global input, tray, set
 - Native-matched preview check: `artifacts/ui-audit/native-matched-preview.png`.
 
 These are actual Qt-hosted captures at 1280x800, captured before the old Qt page source was removed; the current React layout was unchanged by that cleanup. The after captures were visually inspected for the library, detail editor, and creator. Bridge reload/reconnect, creator file round trips, dialog cancellation, and tray hide/show were exercised; bridge disconnect recovery, real-game fullscreen behavior, overlay responsiveness during UI suspension, packaged executable interaction after this cleanup, installer build, and reliable CPU/memory measurements remain unverified.
-

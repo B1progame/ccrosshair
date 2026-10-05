@@ -15,8 +15,9 @@ It is built with `PySide6`, uses Windows-native overlay behavior, and stores you
 - Theme controls, accent color customization, and shared global size controls
 - Experimental Beta Zoom page with hotkey-based live zoom preview
 
-**Latest Update (1.2.0)**
-- UI changes and bug fixes
+**Latest Update (1.2.3)**
+- Fixed the bundled Qt runtime lookup and replaced the app and installer icon with the supplied crosshair artwork.
+- Made zoom resizing asynchronous with latest-frame handling, keyboard zoom steps, and runtime diagnostics.
 - Full details: see `CHANGELOG.md`
 
 **Platform**

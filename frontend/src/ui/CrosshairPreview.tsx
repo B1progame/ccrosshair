@@ -57,6 +57,18 @@ function ShapeLayer({ item, stroke, opacity, line, circle, dot }: ShapeLayerProp
     const half = Math.max(2, arm / 2 + item.gap / 3);
     path('diamond', `M50 ${px(-half)}L${px(half)} 50 50 ${px(half)} ${px(-half)} 50Z`);
   }
+  if (item.shape === 'chevron') {
+    path('chevron-left-up', `M${px(-arm)} ${px(-arm)}L${px(-gap)} 50`);
+    path('chevron-left-down', `M${px(-arm)} ${px(arm)}L${px(-gap)} 50`);
+    path('chevron-right-up', `M${px(gap)} 50L${px(arm)} ${px(-arm)}`);
+    path('chevron-right-down', `M${px(gap)} 50L${px(arm)} ${px(arm)}`);
+  }
+  if (item.shape === 'sniper') {
+    path('sniper-left', `M${px(-arm-gap/2)} 50H${px(-gap/2)}`);
+    path('sniper-right', `M${px(gap/2)} 50H${px(arm+gap/2)}`);
+    path('sniper-top', `M50 ${px(-arm-gap/2)}V${px(-gap/2)}`);
+    path('sniper-bottom', `M50 ${px(gap/2)}V${px(arm+gap/2)}`);
+  }
   if (item.shape === 'custom_grid') parts.push(...cells);
   if (item.dot || item.shape === 'dot') {
     const radius = dot * factor / 2;

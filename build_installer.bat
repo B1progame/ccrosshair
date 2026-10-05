@@ -41,8 +41,8 @@ if errorlevel 1 goto :error
 if not exist "installer\build" mkdir "installer\build"
 if not exist "installer\output" mkdir "installer\output"
 
-echo [build] Generating Windows icon from SVG...
-"%PYTHON%" "%ICON_SCRIPT%" "src\crosshair_overlay\assets\logo.svg" "%ICON_OUTPUT%"
+echo [build] Generating Windows icon from app artwork...
+"%PYTHON%" "%ICON_SCRIPT%" "src\crosshair_overlay\assets\logo.png" "%ICON_OUTPUT%"
 if errorlevel 1 (
     echo [build] Icon generation failed. The build will continue without a custom EXE icon.
     set "ICON_READY=0"
@@ -56,9 +56,9 @@ if not exist "src\crosshair_overlay\webui\dist\index.html" (
     goto :error
 )
 if "%ICON_READY%"=="1" (
-    "%PYTHON%" -m PyInstaller --noconfirm --clean --onedir --windowed --name CrosshairOverlay --paths "%ROOT%\src" --collect-submodules crosshair_overlay --add-data "src\crosshair_overlay\assets;crosshair_overlay\assets" --add-data "src\crosshair_overlay\version.txt;crosshair_overlay" --add-data "src\crosshair_overlay\webui\dist;crosshair_overlay\webui\dist" --icon "%ICON_OUTPUT%" main.py
+    "%PYTHON%" -m PyInstaller --noconfirm --clean --distpath "%ROOT%\dist" --workpath "%ROOT%\build" "%ROOT%\CrosshairOverlay.spec"
 ) else (
-    "%PYTHON%" -m PyInstaller --noconfirm --clean --onedir --windowed --name CrosshairOverlay --paths "%ROOT%\src" --collect-submodules crosshair_overlay --add-data "src\crosshair_overlay\assets;crosshair_overlay\assets" --add-data "src\crosshair_overlay\version.txt;crosshair_overlay" --add-data "src\crosshair_overlay\webui\dist;crosshair_overlay\webui\dist" main.py
+    "%PYTHON%" -m PyInstaller --noconfirm --clean --distpath "%ROOT%\dist" --workpath "%ROOT%\build" "%ROOT%\CrosshairOverlay.spec"
 )
 if errorlevel 1 goto :error
 

@@ -49,6 +49,12 @@ def _draw_shape(painter: QPainter, center: QPointF, style: OverlayStyle, outline
     if style.shape == OverlayShape.DIAMOND:
         _draw_diamond(painter, center, style, color, line_thickness)
 
+    if style.shape == OverlayShape.CHEVRON:
+        _draw_chevron(painter, center, style, color, line_thickness)
+
+    if style.shape == OverlayShape.SNIPER:
+        _draw_sniper(painter, center, style, color, line_thickness)
+
     if style.shape == OverlayShape.CUSTOM_GRID:
         _draw_custom_grid(painter, center, style, color)
 
@@ -140,6 +146,33 @@ def _draw_custom_grid(painter: QPainter, center: QPointF, style: OverlayStyle, c
     top = center.y() - (grid_px / 2.0)
     for x, y in style.custom_filled_cells:
         painter.fillRect(QRectF(left + (x * cell_size), top + (y * cell_size), cell_size, cell_size), color)
+
+
+def _draw_chevron(painter: QPainter, center: QPointF, style: OverlayStyle, color: QColor, thickness: int) -> None:
+    pen = QPen(color, max(1, thickness))
+    pen.setCapStyle(Qt.PenCapStyle.SquareCap)
+    painter.setPen(pen)
+    span = float(style.arm_length)
+    gap = float(style.gap) / 2.0
+    painter.drawLine(QPointF(center.x() - span, center.y() - span), QPointF(center.x() - gap, center.y()))
+    painter.drawLine(QPointF(center.x() - span, center.y() + span), QPointF(center.x() - gap, center.y()))
+    painter.drawLine(QPointF(center.x() + gap, center.y()), QPointF(center.x() + span, center.y() - span))
+    painter.drawLine(QPointF(center.x() + gap, center.y()), QPointF(center.x() + span, center.y() + span))
+
+
+def _draw_sniper(painter: QPainter, center: QPointF, style: OverlayStyle, color: QColor, thickness: int) -> None:
+    pen = QPen(color, max(1, thickness))
+    pen.setCapStyle(Qt.PenCapStyle.SquareCap)
+    painter.setPen(pen)
+    reach = float(style.arm_length) + float(style.gap) / 2.0
+    gap = float(style.gap) / 2.0
+    for x1, y1, x2, y2 in (
+        (center.x() - reach, center.y(), center.x() - gap, center.y()),
+        (center.x() + gap, center.y(), center.x() + reach, center.y()),
+        (center.x(), center.y() - reach, center.x(), center.y() - gap),
+        (center.x(), center.y() + gap, center.x(), center.y() + reach),
+    ):
+        painter.drawLine(QPointF(x1, y1), QPointF(x2, y2))
 
 
 def _rotated_point(center: QPointF, x: float, y: float, degrees: float) -> QPointF:

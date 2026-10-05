@@ -4,6 +4,7 @@ import ctypes
 from ctypes import wintypes
 
 from PySide6.QtCore import QEvent, QPoint, Qt
+from PySide6.QtCore import QPropertyAnimation
 from PySide6.QtWidgets import QApplication, QWidget
 
 from .config import OverlayStyle
@@ -28,6 +29,7 @@ class OverlayWindow(QWidget):
         super().__init__()
         self._style = style
         self._crosshair = CrosshairWidget(style=style, parent=self)
+        self._input_animation: QPropertyAnimation | None = None
         self._user32 = ctypes.WinDLL("user32", use_last_error=True)
         self._long_ptr_type = ctypes.c_longlong if ctypes.sizeof(ctypes.c_void_p) == 8 else ctypes.c_long
         self._get_window_long_ptr = getattr(self._user32, "GetWindowLongPtrW", self._user32.GetWindowLongW)
@@ -68,12 +70,35 @@ class OverlayWindow(QWidget):
         self.setWindowFlags(flags)
 
     def set_style(self, style: OverlayStyle) -> None:
+        center = self.geometry().center()
         changed = self._crosshair.set_style(style)
         self._style = style
         if not changed:
             return
         self.setFixedSize(self._crosshair.size())
+        self.move(center.x() - self.width() // 2, center.y() - self.height() // 2)
         self._enforce_native_overlay_flags()
+
+    def trigger_fire_pulse(self, duration_ms: int, amplitude_percent: int, opacity_pulse: bool, gap_expansion: bool = True) -> None:
+        self._crosshair.trigger_fire_pulse(duration_ms, amplitude_percent, opacity_pulse, gap_expansion)
+
+    def cancel_fire_pulse(self) -> None:
+        self._crosshair.cancel_fire_pulse()
+
+    def set_input_suppressed(self, suppressed: bool, transition_ms: int = 0) -> None:
+        if self._input_animation is not None:
+            self._input_animation.stop()
+        target = 0.0 if suppressed else 1.0
+        duration = max(0, min(500, int(transition_ms)))
+        if duration == 0:
+            self.setWindowOpacity(target)
+            return
+        animation = QPropertyAnimation(self, b"windowOpacity", self)
+        animation.setDuration(duration)
+        animation.setStartValue(self.windowOpacity())
+        animation.setEndValue(target)
+        self._input_animation = animation
+        animation.start()
 
     def center_on_primary_screen(self) -> None:
         app = QApplication.instance()
