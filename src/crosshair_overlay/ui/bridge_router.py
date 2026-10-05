@@ -16,7 +16,7 @@ class BridgeCommandRouter:
     """Validate and route the finite set of commands exposed to bundled React UI."""
 
     FIELDS = {
-        "ready": set(), "navigate": {"page"}, "queryCatalog": {"query", "filter", "page", "pageSize"}, "toggleNative": set(), "quit": set(),
+        "ready": set(), "navigate": {"page"}, "queryCatalog": {"query", "filter", "page", "pageSize"}, "quit": set(),
         "selectStyle": {"styleId"}, "activateStyle": {"styleId"}, "toggleFavorite": {"styleId"},
         "openDetail": {"styleId"}, "updateStyle": {"styleId", "updates"}, "saveVariant": {"styleId"},
         "sendToCreator": {"styleId"}, "setOverlay": {"enabled"}, "setTheme": {"theme"},
@@ -58,17 +58,19 @@ class BridgeCommandRouter:
             page = payload["page"]
             if page not in self.PAGES: raise ValueError("Unsupported page")
             w._web_page = page
+            w._current_page_id = "zoom" if page == "beta" else page
             return {"accepted": True, "page": page}
         if command == "queryCatalog": return self._query_catalog(payload)
-        if command == "toggleNative": w.show_native_surface(); return {"accepted": True}
         if command == "quit": w.quit_requested.emit(); return {"accepted": True}
         if command in {"selectStyle", "activateStyle", "toggleFavorite", "openDetail", "saveVariant", "sendToCreator"}:
             style_id = self._style_id(payload.get("styleId"))
             w._web_selected_id = style_id
-            if command == "selectStyle": w._crosshairs_page.set_previewed_style(style_id)
+            if command == "selectStyle": pass
             elif command == "activateStyle": w.style_selected.emit(style_id)
             elif command == "toggleFavorite": w.style_favorite_toggled.emit(style_id)
-            elif command == "openDetail": w._web_page = "detail"
+            elif command == "openDetail":
+                w._web_page = "detail"
+                w._current_page_id = "detail"
             elif command == "saveVariant":
                 w.style_variant_save_requested.emit(w._definitions[style_id])
             else: w.send_to_editor_requested.emit(style_id)
@@ -261,3 +263,4 @@ class BridgeCommandRouter:
             if type(value) is not int or not minimum <= value <= maximum: raise ValueError(f"Invalid {name}")
             values[field] = value
         return BetaZoomSettings(**values)
+

@@ -6,7 +6,7 @@ Repository: `B1progame/ccrosshair`
 
 Recoverable pre-migration checkpoint: `990f991ffcc80180ddbbf47f543ee1e1e487a559`, also published as `backup/pre-react-migration-20261004-183629` on GitHub.
 
-PySide6 remains the desktop host and owns overlay, zoom, global input, tray, settings, game profiles, storage, and update services. The normal control window is now one offline React/Vite shell served from the bundled `crosshair://ui` scheme. Python owns persisted and native state; the versioned WebChannel bridge validates commands and returns correlated results. The classic Qt pages remain available through **Switch to classic controls** as a recovery surface.
+PySide6 remains the desktop host and owns overlay, zoom, global input, tray, settings, game profiles, storage, and update services. The control window is a single offline React/Vite surface served from the bundled `crosshair://ui` scheme. Python owns persisted and native state; the versioned WebChannel bridge validates commands and returns correlated results. The old Qt page shell, page widgets, sidebar and classic-surface switch have been removed from the application and source tree. A small error message is shown if the React bundle itself cannot load.
 
 ## Feature parity matrix
 
@@ -21,20 +21,23 @@ PySide6 remains the desktop host and owns overlay, zoom, global input, tray, set
 | Zoom/Beta | Visibility gate, zoom/live enablement, hotkey, monitor, scale, placement, animation settings | Implemented; page captured; native capture remains outside WebChannel |
 | Export | Import packs, export active or selected styles, paginated selection catalog | Implemented; page captured |
 | Settings | Theme/system resolution, contrast-aware accent, sizes, startup, storage picker, update check, reset, quit | Implemented; page captured |
-| About and recovery | Version/runtime state, updates, explicit classic-controls fallback | Implemented; page captured |
+| About and app shell | Version/runtime state and updates; one React-only control surface | Implemented; page captured; old Qt page modules and fallback command removed |
 | Bridge/runtime | Typed TS contracts, payload allowlists, request IDs, errors, revision ordering, reconnect, trusted local scheme | Implemented; Python compilation, Qt-hosted page load, and reload/reconnect smoke pass; worker cleanup keys retain full 64-bit values |
 
 ## Verification
 
-- Python: `PYTHONPATH=src python -m unittest discover -s tests -v` — 12 tests passed, including creator save/re-save ID stability, 64-bit worker reaper keys, and the startup auto-update preference.
+- Python: `PYTHONPATH=src python -m unittest discover -s tests -v` — 11 tests passed, including creator save/re-save ID stability, 64-bit worker reaper keys, startup auto-update preference, fullscreen debouncing, transient process-scan misses, removal of native page fallback, and no screen captures on an inactive Zoom page.
 - Python import/bytecode check: `python -m compileall -q src tests` — passed.
-- Frontend: `npm --prefix frontend run build` — TypeScript and Vite production build passed. Bundle: 338.39 kB JavaScript (109.62 kB gzip), 19.86 kB CSS (4.51 kB gzip).
+- Frontend: `npm --prefix frontend run build` — TypeScript and Vite production build passed. Bundle: 338.35 kB JavaScript (109.61 kB gzip), 19.79 kB CSS (4.48 kB gzip).
 - Catalog query microbenchmark (20 runs per size, synthetic definitions, this host): 100 items median 0.032 ms / p95 0.037 ms; 1,000 items 0.281 / 0.299 ms; 10,000 items 2.947 / 3.802 ms. This measures the bounded Python query path, not end-to-end browser scroll latency.
 - Qt-hosted WebEngine smoke capture loaded all nine regular pages and the Detail page. Screenshots were captured at 980×600, 1280×800, and 1440×900, including collapsed navigation. The VM required `--disable-gpu`; Chromium reports unavailable virtualized GLES contexts, then page rendering succeeds. Current captures are in `artifacts/ui-audit/`.
 - A live, isolated `AppController` + Qt/WebChannel smoke exercised all nine React routes, style activation and settings persistence, light-theme persistence, creator draw/save/re-save with one stable custom style ID, creator load/export round trip, native dialog cancellation, game-profile actions, Beta Zoom controls, and tray hide/show behavior. A page reload/reconnect smoke and rapid route-switch smoke also passed. The isolated app used temporary settings/storage and did not modify the user's settings.
+- After removing the classic Qt page system, a fresh live Qt/WebEngine smoke confirmed the single `MainWindow → ReactSurface` app loads directly to Home, contains no classic-controls action, and can navigate to Settings through the WebChannel.
+- Fullscreen state now requires two consecutive positive polls to turn on and three negatives to turn off. A mapped game profile is held through two missing process scans and released on the third, preventing one missed poll from blinking the overlay. The new debounce behavior is covered by regression tests.
+- An inactive Zoom settings page no longer triggers continuous desktop frame captures; native capture remains active only when live zoom or its hotkey requires it.
 - Startup timing was sampled once per version in the same offscreen VM: the checkpoint's native window first paint was 1,558.3 ms; current native window first paint was 1,384.5 ms and React load completion was 1,795.2 ms. This is a single-sample diagnostic, not a repeatable benchmark; it does not establish an overall startup speed improvement. The additional React-ready time versus the prior native first paint was about 0.24 s in this run.
 - The bounded Python catalog query microbenchmark above covers 100, 1,000, and 10,000 entries. Search/filter/scroll interaction under large browser catalogs, fullscreen automation, hidden/idle CPU, and attributable WebEngine memory have not had a complete benchmark. The host denied process ownership/parent inspection, so aggregate WebEngine process memory could not be attributed reliably.
-- PyInstaller `--onedir --windowed` completed from the latest Python and frontend sources and included the offline `webui/dist` assets at `_internal/crosshair_overlay/webui/dist/`. The portable directory is 620,075,002 bytes (about 591 MiB). A complete interactive smoke test of the packaged executable, installer build, and installer size were not verified here.
+- PyInstaller `--onedir --windowed --clean` completed from the final Python and frontend sources and included the offline `webui/dist` assets at `_internal/crosshair_overlay/webui/dist/`. The executable is 2,047,022 bytes; the portable directory size and complete interactive smoke test of the packaged executable, installer build, and installer size were not verified here.
 
 ## Visual evidence
 
@@ -42,5 +45,5 @@ PySide6 remains the desktop host and owns overlay, zoom, global input, tray, set
 - After: `artifacts/ui-audit/react-home.png`, `react-library.png`, `react-my-crosshairs.png`, `react-detail.png`, `react-creator.png`, `react-games.png`, `react-zoom.png`, `react-export.png`, `react-settings.png`, and `react-about.png`. Responsive captures: `responsive-980-library.png`, `responsive-980-creator.png`, `collapsed-980-creator.png`, and `large-1440-home.png`.
 - Native-matched preview check: `artifacts/ui-audit/native-matched-preview.png`.
 
-These are actual Qt-hosted captures at 1280x800. The after captures were visually inspected for the library, detail editor, and creator. Bridge reload/reconnect, creator file round trips, dialog cancellation, and tray hide/show were exercised; bridge disconnect recovery, fullscreen detection, overlay responsiveness during UI suspension, packaged executable interaction, installer build, and reliable CPU/memory measurements remain unverified.
+These are actual Qt-hosted captures at 1280x800, captured before the old Qt page source was removed; the current React layout was unchanged by that cleanup. The after captures were visually inspected for the library, detail editor, and creator. Bridge reload/reconnect, creator file round trips, dialog cancellation, and tray hide/show were exercised; bridge disconnect recovery, real-game fullscreen behavior, overlay responsiveness during UI suspension, packaged executable interaction after this cleanup, installer build, and reliable CPU/memory measurements remain unverified.
 

@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 17536)
-Total output lines: 1532
-
 from __future__ import annotations
 
 import re
@@ -51,7 +48,7 @@ from .windows_runtime import (
 )
 from .ui.main_window import MainWindow
 from .ui.react_surface import register_react_scheme
-from .ui.pages.games_page import GameRowModel
+from .ui.models import GameRowModel
 
 try:
     import winreg
@@ -170,7 +167,10 @@ class AppController(QObject):
         self._manual_style_id = self._current_style_id
         self._auto_applied_style_id: str | None = None
         self._active_game_profile_id: str | None = None
+        self._active_game_profile_misses = 0
         self._last_fullscreen_state = False
+        self._fullscreen_true_samples = 0
+        self._fullscreen_false_samples = 0
         self._last_game_monitor_bounds: tuple[int, int, int, int] | None = None
         self._last_game_window_bounds: tuple[int, int, int, int] | None = None
         self._discovered_games: list[DiscoveredGame] = []
@@ -514,7 +514,477 @@ class AppController(QObject):
 
     def import_pack(self, pack_path: str) -> None:
         try:
-            source = Path(p…5536 tokens truncated…name.strip().lower()
+            source = Path(pack_path)
+            suffix = source.suffix.lower()
+            bundle_dir = self._storage_paths.create_import_bundle(source.stem)
+            items_dir = bundle_dir / "items"
+            saved_ids: list[str] = []
+
+            if suffix == XHAIR_EXTENSION:
+                definition = load_xhair(source)
+                stored = self._store_imported_definition(definition, items_dir, source_type="imported_pack")
+                saved_ids.append(stored.style_id)
+                shutil.copy2(source, bundle_dir / source.name)
+            elif suffix == XPACK_EXTENSION:
+                definitions = load_xpack(source)
+                for definition in definitions:
+                    stored = self._store_imported_definition(definition, items_dir, source_type="imported_pack")
+                    saved_ids.append(stored.style_id)
+                shutil.copy2(source, bundle_dir / source.name)
+            elif suffix == ".chgrid":
+                creator_model = load_creator_crosshair(source)
+                target_id = self._next_available_style_id(self._slugify(creator_model.style_id or creator_model.name), items_dir, ".chgrid")
+                creator_model.style_id = target_id
+                target = items_dir / f"{target_id}.chgrid"
+                save_creator_crosshair(creator_model, target)
+                saved_ids.append(target_id)
+            else:
+                style = load_style_pack(source)
+                definition = CrosshairDefinition(
+                    style=style,
+                    family="Legacy Pack",
+                    description="Imported from legacy .chpack.",
+                    tags=("legacy", "pack"),
+                    editable_settings=self._definitions[default_style_id()].editable_settings,
+                    source_type="legacy_pack",
+                )
+                stored = self._store_imported_definition(definition, items_dir, source_type="legacy_pack")
+                saved_ids.append(stored.style_id)
+                shutil.copy2(source, bundle_dir / source.name)
+
+            manifest = {
+                "imported_at": datetime.now().isoformat(timespec="seconds"),
+                "source_name": source.name,
+                "source_suffix": suffix,
+                "imported_style_ids": saved_ids,
+            }
+            (bundle_dir / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+
+            self._definitions = self._library.load(self._storage_paths.root)
+            self._hydrate_favorites()
+            selected = saved_ids[-1] if saved_ids else self._current_style_id
+            self._main_window.refresh_definitions(self._definitions, selected_style_id=selected)
+            self.set_overlay_style(selected)
+            self._refresh_games_page()
+            QMessageBox.information(
+                self._main_window,
+                "Import Complete",
+                f"Imported {len(saved_ids)} crosshair(s) into:\n{bundle_dir}",
+            )
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.warning(self._main_window, "Import Failed", f"Could not import crosshair file.\n{exc}")
+
+    def export_current_style(self, destination: str) -> None:
+        try:
+            definition = self._definitions[self._current_style_id]
+            save_xhair(definition, Path(destination))
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.warning(self._main_window, "Export Failed", f"Could not export crosshair.\n{exc}")
+
+    def export_style_definition(self, style_id: str, destination: str) -> None:
+        try:
+            if style_id not in self._definitions:
+                return
+            save_xhair(self._definitions[style_id], Path(destination))
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.warning(self._main_window, "Export Failed", f"Could not export crosshair.\n{exc}")
+
+    def export_selected_pack(self, style_ids: list[object], destination: str) -> None:
+        resolved_ids = [str(style_id) for style_id in style_ids if str(style_id) in self._definitions]
+        if not resolved_ids:
+            return
+        definitions = self._library.definitions_for_ids(resolved_ids)
+        metadata = {
+            "pack_name": Path(destination).stem,
+            "exported_at": datetime.now().isoformat(timespec="seconds"),
+            "count": len(definitions),
+        }
+        try:
+            save_xpack(definitions, Path(destination), metadata=metadata)
+            QMessageBox.information(
+                self._main_window,
+                "Pack Exported",
+                f"Exported {len(definitions)} crosshair(s) to:\n{destination}",
+            )
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.warning(self._main_window, "Export Failed", f"Could not export crosshair pack.\n{exc}")
+
+    def reset_settings(self) -> None:
+        self._settings = AppSettings(
+            crosshair_storage_path=self._settings.crosshair_storage_path or str(self._config.default_crosshair_path)
+        )
+        self._definitions = self._library.load(Path(self._settings.crosshair_storage_path))
+        self._current_style_id = self._validated_style_id(self._settings.selected_style_id)
+        self._manual_style_id = self._current_style_id
+        self._auto_applied_style_id = None
+        self._active_game_profile_id = None
+        self._zoom_hotkey = parse_hotkey(self._settings.beta_zoom.hotkey_sequence)
+        self._zoom_showing = False
+        self._last_game_monitor_bounds = None
+        self._last_game_window_bounds = None
+        self._overlay.set_style(self._effective_style())
+        self._hide_zoom_overlay()
+        self._main_window.refresh_definitions(self._definitions, selected_style_id=self._current_style_id)
+        self._main_window.set_selected_style(self._current_style_id)
+        self._main_window.set_selected_style_name(self._definitions[self._current_style_id].display_name)
+        self._main_window.set_active_style_preview(self._definitions[self._current_style_id])
+        self._main_window.set_selected_size(self._settings.selected_size_percent)
+        self._main_window.set_global_size(self._settings.global_size_percent)
+        self._main_window.set_theme_values(self._settings.theme_mode, self._settings.accent_color, self._theme_manager.resolved_mode.value)
+        self._main_window.set_beta_page_visible(self._settings.beta_zoom.sidebar_enabled)
+        self._main_window.set_beta_zoom_settings(self._settings.beta_zoom)
+        self._refresh_beta_monitor_choices()
+        self._apply_theme()
+        if self._settings.overlay_enabled:
+            self._overlay.show()
+            self._overlay_visible = True
+            self._manual_overlay_enabled = True
+            self._main_window.set_overlay_status(True)
+        else:
+            self._overlay.hide()
+            self._overlay_visible = False
+            self._manual_overlay_enabled = False
+            self._main_window.set_overlay_status(False)
+        self._reload_games()
+        self._refresh_games_page()
+        self._sync_windows_autostart_setting()
+        self._save_settings()
+
+    def _check_updates_on_startup(self) -> None:
+        if not self._settings.auto_update_on_startup:
+            return
+        if self._update_check_running:
+            return
+        self._update_check_running = True
+        worker = _ReleaseCheckWorker(self._update_manager)
+        worker.signals.finished.connect(self._handle_startup_update_result)
+        self._start_worker(worker)
+
+    def _handle_startup_update_result(self, result: object) -> None:
+        self._update_check_running = False
+        if isinstance(result, Exception) or not isinstance(result, ReleaseInfo):
+            self._main_window.set_update_available(False)
+            return
+        release = result
+        update_available = self._update_manager.is_newer_than_current(release) and release.installer_asset is not None
+        self._main_window.set_update_available(update_available)
+        if not update_available:
+            return
+        if not self._settings.auto_update_on_startup:
+            return
+        if not self._update_manager.can_self_update():
+            return
+        if self._confirm_update_install(release):
+            self._download_and_install_update(release)
+
+    def _sync_windows_autostart_setting(self) -> None:
+        if winreg is None or os.name != "nt":
+            return
+        key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
+        value_name = "CCCrosshairOverlay"
+        command = self._startup_command()
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE) as key:
+                if self._settings.run_on_startup_tray and command:
+                    winreg.SetValueEx(key, value_name, 0, winreg.REG_SZ, command)
+                else:
+                    try:
+                        winreg.DeleteValue(key, value_name)
+                    except OSError:
+                        pass
+        except OSError:
+            pass
+
+    def _startup_command(self) -> str:
+        if getattr(sys, "frozen", False):
+            exe = Path(sys.executable).resolve()
+            return f'"{exe}" --tray-start'
+        pythonw = Path(sys.executable).resolve()
+        main_file = Path(__file__).resolve().parents[2] / "main.py"
+        if not main_file.exists():
+            return ""
+        return f'"{pythonw}" "{main_file}" --tray-start'
+
+    def check_for_updates(self, silent_if_latest: bool = False, silent_on_error: bool = False) -> None:
+        if self._update_check_running:
+            return
+        self._update_check_running = True
+        self._manual_update_options = (silent_if_latest, silent_on_error)
+        self._manual_update_progress = self._indefinite_progress_dialog("Checking GitHub releases...")
+        worker = _ReleaseCheckWorker(self._update_manager, timeout_s=8.0)
+        worker.signals.finished.connect(self._handle_manual_update_result)
+        self._start_worker(worker)
+
+    def _handle_manual_update_result(self, result: object) -> None:
+        self._update_check_running = False
+        if self._manual_update_progress is not None:
+            self._manual_update_progress.close()
+            self._manual_update_progress = None
+        silent_if_latest, silent_on_error = self._manual_update_options
+        if isinstance(result, Exception):
+            if not silent_on_error:
+                QMessageBox.warning(self._main_window, "Updates", str(result))
+            return
+        if not isinstance(result, ReleaseInfo):
+            return
+        release = result
+
+        if not self._update_manager.is_newer_than_current(release):
+            self._main_window.set_update_available(False)
+            if not silent_if_latest:
+                QMessageBox.information(
+                    self._main_window,
+                    "Updates",
+                    f"You're up to date.\nCurrent version: {APP_VERSION}",
+                )
+            return
+
+        if release.installer_asset is None:
+            self._main_window.set_update_available(False)
+            QMessageBox.warning(
+                self._main_window,
+                "Updates",
+                "A newer GitHub release was found, but it does not contain a Windows installer asset yet.",
+            )
+            return
+
+        self._main_window.set_update_available(True)
+
+        if not self._update_manager.can_self_update():
+            QMessageBox.information(
+                self._main_window,
+                "Update Available",
+                (
+                    f"Version {release.version} is available on GitHub.\n\n"
+                    "Automatic in-place updates work from the installed app build.\n"
+                    f"Release page:\n{release.html_url}"
+                ),
+            )
+            return
+
+        if not self._confirm_update_install(release):
+            return
+        self._download_and_install_update(release)
+
+    def _confirm_update_install(self, release: ReleaseInfo) -> bool:
+        published = release.published_at or "unknown date"
+        answer = QMessageBox.question(
+            self._main_window,
+            "Install Update",
+            (
+                f"A new version is available.\n\n"
+                f"Current version: {APP_VERSION}\n"
+                f"Latest version: {release.version}\n"
+                f"Published: {published}\n\n"
+                "The installer will be downloaded, this app will close, the update will install silently, "
+                "and then the app will relaunch automatically.\n\n"
+                "Continue?"
+            ),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
+        return answer == QMessageBox.StandardButton.Yes
+
+    def _download_and_install_update(self, release: ReleaseInfo) -> None:
+        progress = QProgressDialog("Downloading update...", None, 0, 0, self._main_window)
+        progress.setWindowTitle("Updating")
+        progress.setAutoClose(False)
+        progress.setAutoReset(False)
+        progress.setMinimumDuration(0)
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.setCancelButton(None)
+        progress.show()
+        self._download_progress = progress
+        worker = _DownloadUpdateWorker(self._update_manager, release)
+        worker.signals.progress.connect(self._handle_update_progress)
+        worker.signals.finished.connect(self._handle_update_download_result)
+        self._start_worker(worker)
+
+    def _handle_update_progress(self, downloaded: int, total: int) -> None:
+        if self._download_progress is not None:
+            self._update_progress(self._download_progress, downloaded, total)
+
+    def _handle_update_download_result(self, result: object) -> None:
+        if self._download_progress is not None:
+            self._download_progress.close()
+            self._download_progress = None
+        if isinstance(result, Exception):
+            QMessageBox.warning(self._main_window, "Update Failed", str(result))
+            return
+        QMessageBox.information(
+            self._main_window,
+            "Installing Update",
+            "The update was downloaded. Crosshair Overlay will now close, install the new version, and relaunch.",
+        )
+        self.quit_application()
+
+    def _update_progress(self, dialog: QProgressDialog, downloaded: int, total: int) -> None:
+        if total > 0:
+            dialog.setRange(0, total)
+            dialog.setValue(min(downloaded, total))
+            dialog.setLabelText(f"Downloading update... {downloaded // 1024} KB / {max(1, total // 1024)} KB")
+        else:
+            dialog.setRange(0, 0)
+            dialog.setLabelText("Downloading update...")
+        QApplication.processEvents()
+
+    def _indefinite_progress_dialog(self, label: str) -> QProgressDialog:
+        dialog = QProgressDialog(label, None, 0, 0, self._main_window)
+        dialog.setWindowTitle("Updates")
+        dialog.setAutoClose(False)
+        dialog.setAutoReset(False)
+        dialog.setMinimumDuration(0)
+        dialog.setWindowModality(Qt.WindowModality.WindowModal)
+        dialog.setCancelButton(None)
+        dialog.show()
+        QApplication.processEvents()
+        return dialog
+
+    def save_creator_crosshair(self, model: object, activate_now: bool) -> None:
+        if not isinstance(model, CreatorCrosshair):
+            return
+        try:
+            style = creator_to_overlay_style(model)
+            style_id = self._creator_style_id(model, style.display_name)
+            style = style_with_updates(style, {"style_id": style_id})
+            creator_model = CreatorCrosshair(
+                name=model.name,
+                grid_size=model.grid_size,
+                creation_mode=model.creation_mode,
+                color_hex=model.color_hex,
+                filled_cells=model.normalized_cells(),
+                style_id=style.style_id,
+                created_at=model.created_at,
+                updated_at=model.updated_at,
+            )
+            destination = self._storage_paths.creator_definition_path(style.style_id)
+            save_creator_crosshair(creator_model, destination)
+
+            self._definitions = self._library.load(self._storage_paths.root)
+            self._hydrate_favorites()
+
+            self._main_window.refresh_definitions(self._definitions, selected_style_id=style.style_id)
+            self._main_window.set_creator_model(creator_model)
+            if activate_now:
+                self.set_overlay_style(style.style_id)
+            self._refresh_games_page()
+            QMessageBox.information(self._main_window, "Saved", f"Saved creator crosshair '{style.display_name}'.")
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.warning(self._main_window, "Save Failed", f"Could not save creator crosshair.\n{exc}")
+
+    def export_creator_crosshair(self, model: object, destination: str) -> None:
+        if not isinstance(model, CreatorCrosshair):
+            return
+        try:
+            save_creator_crosshair(model, Path(destination))
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.warning(self._main_window, "Export Failed", f"Could not export creator crosshair.\n{exc}")
+
+    def send_style_to_editor(self, style_id: str) -> None:
+        if style_id not in self._definitions:
+            return
+        definition = self._definitions[style_id]
+        model: CreatorCrosshair | None = None
+
+        if definition.source_type == "creator_grid" and definition.source_path:
+            source = Path(definition.source_path)
+            if source.exists():
+                try:
+                    model = load_creator_crosshair(source)
+                except Exception:  # noqa: BLE001
+                    model = None
+
+        if model is None and definition.style.shape == OverlayShape.CUSTOM_GRID:
+            color_hex = "#{:02X}{:02X}{:02X}".format(
+                definition.style.color_rgba[0],
+                definition.style.color_rgba[1],
+                definition.style.color_rgba[2],
+            )
+            model = CreatorCrosshair(
+                name=definition.display_name,
+                grid_size=max(16, min(64, int(definition.style.custom_grid_size))),
+                creation_mode="pixel",
+                color_hex=color_hex,
+                filled_cells=[(int(x), int(y)) for x, y in definition.style.custom_filled_cells],
+                style_id=definition.style_id,
+            )
+
+        if model is None:
+            model = overlay_style_to_creator(model_name=definition.display_name, style=definition.style, grid_size=32)
+
+        self._main_window.open_creator_with_model(model)
+
+    def _store_imported_definition(self, definition: CrosshairDefinition, items_dir: Path, source_type: str) -> CrosshairDefinition:
+        items_dir.mkdir(parents=True, exist_ok=True)
+        target_id = self._next_available_style_id(self._slugify(definition.display_name or definition.style_id), items_dir, ".xhair")
+        style = style_with_updates(definition.style, {"style_id": target_id, "display_name": definition.display_name})
+        stored = CrosshairDefinition(
+            style=style,
+            family=definition.family,
+            description=definition.description,
+            tags=definition.tags,
+            editable_settings=definition.editable_settings,
+            source_type=source_type,
+            is_favorite=definition.is_favorite,
+        )
+        destination = items_dir / f"{target_id}.xhair"
+        save_xhair(stored, destination)
+        return stored
+
+    def _creator_style_id(self, model: CreatorCrosshair, display_name: str) -> str:
+        existing = self._definitions.get(model.style_id)
+        if existing is not None and existing.source_type == "creator_grid":
+            return model.style_id
+        return self._next_available_style_id(
+            self._slugify(display_name), self._storage_paths.creator_dir, ".chgrid"
+        )
+
+    def _next_available_style_id(self, base_id: str, directory: Path, suffix: str) -> str:
+        existing_ids = set(self._definitions.keys())
+        target_id = base_id
+        index = 2
+        while target_id in existing_ids or (directory / f"{target_id}{suffix}").exists():
+            target_id = f"{base_id}_{index}"
+            index += 1
+        return target_id
+
+    def set_auto_enable_on_fullscreen(self, enabled: bool) -> None:
+        self._settings.auto_enable_on_fullscreen = bool(enabled)
+        if not enabled:
+            self._set_overlay_visible(self._manual_overlay_enabled, persist=False)
+        self._refresh_games_page()
+        self._save_settings()
+
+    def set_auto_switch_game_profiles(self, enabled: bool) -> None:
+        self._settings.auto_switch_game_profiles = bool(enabled)
+        if not enabled and self._auto_applied_style_id is not None:
+            self._restore_manual_style_if_needed()
+        self._refresh_games_page()
+        self._save_settings()
+
+    def update_game_profile(self, game_id: str, style_id: str, enabled: bool) -> None:
+        game_map = {game.game_id: game for game in self._all_games()}
+        discovered = game_map.get(game_id)
+        profile = self._profile_for_game(game_id)
+        if profile is None:
+            profile = GameProfile(
+                game_id=game_id,
+                title=discovered.title if discovered else game_id,
+                source=discovered.source if discovered else "manual",
+                executable_names=[],
+                executable_path="",
+                icon_path="",
+                style_id="",
+                enabled=False,
+            )
+            self._settings.game_profiles.append(profile)
+
+        if discovered is not None:
+            profile.title = discovered.title
+            profile.source = discovered.source
+            profile.executable_path = discovered.executable_path
+            profile.icon_path = discovered.icon_path
+            executable_name = discovered.executable_name.strip().lower()
             profile.executable_names = [executable_name] if executable_name else []
 
         profile.style_id = style_id if style_id in self._definitions else ""
@@ -643,7 +1113,7 @@ class AppController(QObject):
         except Exception:
             fullscreen = False
 
-        self._last_fullscreen_state = fullscreen
+        fullscreen = self._debounce_fullscreen_state(fullscreen)
         monitor_bounds: tuple[int, int, int, int] | None = None
         try:
             monitor_bounds = foreground_monitor_bounds()
@@ -655,7 +1125,7 @@ class AppController(QObject):
         except Exception:
             window_bounds = None
 
-        active_profile = self._resolve_active_game_profile(running_names)
+        active_profile = self._stable_active_game_profile(self._resolve_active_game_profile(running_names))
         if monitor_bounds is not None and fullscreen:
             self._last_game_monitor_bounds = monitor_bounds
         if window_bounds is not None and fullscreen:
@@ -689,6 +1159,7 @@ class AppController(QObject):
         else:
             self._restore_manual_style_if_needed()
             self._active_game_profile_id = None
+            self._active_game_profile_misses = 0
 
         runtime_status = self._current_runtime_status()
         if runtime_status != self._last_runtime_status:
@@ -696,38 +1167,27 @@ class AppController(QObject):
             self._last_runtime_status = runtime_status
 
     def _zoom_tick(self) -> None:
-        show_preview = (
-            self._settings.beta_zoom.sidebar_enabled
-            and self._main_window.isVisible()
-            and self._main_window.current_page_id == "beta"
-        )
         live_zoom_enabled = self._settings.beta_zoom.sidebar_enabled and self._settings.beta_zoom.live_enabled
         allow_zoom = self._settings.beta_zoom.sidebar_enabled and self._settings.beta_zoom.zoom_enabled
         hotkey_down = allow_zoom and is_hotkey_pressed(self._zoom_hotkey)
-        if not show_preview and not live_zoom_enabled and not hotkey_down:
+        if not live_zoom_enabled and not hotkey_down:
             self._hide_zoom_overlay()
             return
 
         source_frame = self._current_zoom_source_frame()
         source_screen = self._screen_for_frame(source_frame)
         if source_screen is None:
-            if show_preview:
-                self._main_window.set_beta_preview(None)
             self._hide_zoom_overlay()
             return
 
         target_screen = self._target_zoom_screen(source_screen, source_frame)
         if target_screen is None:
-            if show_preview:
-                self._main_window.set_beta_preview(None)
             self._hide_zoom_overlay()
             return
 
         capture_point = self._current_zoom_capture_point(source_screen, source_frame)
         target_rect = self._zoom_target_rect(target_screen, capture_point)
         if target_rect is None:
-            if show_preview:
-                self._main_window.set_beta_preview(None)
             self._hide_zoom_overlay()
             return
 
@@ -739,9 +1199,6 @@ class AppController(QObject):
             target_rect.size(),
             avoid_zoom_feedback=avoid_zoom_feedback,
         )
-        if show_preview:
-            self._main_window.set_beta_preview(pixmap)
-
         if pixmap is None or pixmap.isNull():
             self._hide_zoom_overlay()
             return
@@ -923,6 +1380,33 @@ class AppController(QObject):
                 name = Path(profile.executable_path).name.lower()
                 if name and name in running_names:
                     return profile
+        return None
+
+    def _debounce_fullscreen_state(self, detected: bool) -> bool:
+        if detected:
+            self._fullscreen_true_samples += 1
+            self._fullscreen_false_samples = 0
+            if self._fullscreen_true_samples >= 2:
+                self._last_fullscreen_state = True
+        else:
+            self._fullscreen_false_samples += 1
+            self._fullscreen_true_samples = 0
+            if self._fullscreen_false_samples >= 3:
+                self._last_fullscreen_state = False
+        return self._last_fullscreen_state
+
+    def _stable_active_game_profile(self, detected: GameProfile | None) -> GameProfile | None:
+        if detected is not None:
+            self._active_game_profile_misses = 0
+            return detected
+        if not self._settings.auto_switch_game_profiles or not self._active_game_profile_id:
+            self._active_game_profile_misses = 0
+            return None
+        self._active_game_profile_misses += 1
+        if self._active_game_profile_misses < 3:
+            retained = self._profile_for_game(self._active_game_profile_id)
+            if retained is not None and retained.enabled and retained.style_id in self._definitions:
+                return retained
         return None
 
     def _restore_manual_style_if_needed(self) -> None:

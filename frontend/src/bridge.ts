@@ -31,7 +31,7 @@ export type Snapshot = {
 };
 export type CommandPayloads = {
   ready: Record<string, never>; navigate:{page:string}; queryCatalog:{query:string;filter:string;page:number;pageSize:number};
-  toggleNative:Record<string,never>; quit:Record<string,never>; selectStyle:{styleId:string}; activateStyle:{styleId:string};
+  quit:Record<string,never>; selectStyle:{styleId:string}; activateStyle:{styleId:string};
   toggleFavorite:{styleId:string}; openDetail:{styleId:string}; updateStyle:{styleId:string;updates:Record<string,number|string|boolean>};
   saveVariant:{styleId:string}; sendToCreator:{styleId:string}; setOverlay:{enabled:boolean}; setTheme:{theme:string};
   setAccent:{color:string}; setSelectedSize:{value:number}; setGlobalSize:{value:number};
@@ -149,3 +149,4 @@ export class Bridge {
   }
 }
 export const bridge=new Bridge();
+

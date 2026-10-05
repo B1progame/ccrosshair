@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 import tempfile
 import unittest
@@ -14,24 +13,17 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", "--disable-gpu")
 os.environ.setdefault("QTWEBENGINE_DISABLE_SANDBOX", "1")
 
-from PySide6.QtCore import Qt
-from PySide6.QtTest import QSignalSpy, QTest
 from PySide6.QtWidgets import QApplication
 
 from crosshair_overlay.config import OverlayStyle
 from crosshair_overlay.app import AppController, _WorkerReaper
-from crosshair_overlay.app_settings import AppSettings
+from crosshair_overlay.app_settings import AppSettings, GameProfile
 from crosshair_overlay.creator.models import CreatorCrosshair
 from crosshair_overlay.crosshairs.catalog import build_builtin_catalog
-from crosshair_overlay.crosshairs.io import save_xhair
 from crosshair_overlay.crosshairs import CrosshairLibrary
 from crosshair_overlay.storage_paths import StoragePaths
 from crosshair_overlay.theme_manager import ThemeManager
 from crosshair_overlay.ui.bridge_router import BridgeCommandRouter
-from crosshair_overlay.ui.pages.crosshairs_page import CrosshairsPage
-from crosshair_overlay.ui.pages.settings_page import SettingsPage
-from crosshair_overlay.ui.sidebar import ChevronButton
-from crosshair_overlay.widgets.crosshair_card import CrosshairCardButton
 
 
 class UiRegressionTests(unittest.TestCase):
@@ -39,59 +31,6 @@ class UiRegressionTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.app = QApplication.instance() or QApplication([])
         cls.definitions = build_builtin_catalog()
-
-    def make_page(self) -> CrosshairsPage:
-        return CrosshairsPage(OrderedDict(self.definitions), "classic_cross", 100)
-
-    def test_my_filters_intersect_the_my_collection(self) -> None:
-        page = self.make_page()
-        favorite = self.definitions["classic_cross"].with_favorite(True)
-        imported = replace(self.definitions["dot_micro"], source_type="imported_pack")
-        page._definitions = OrderedDict([(favorite.style_id, favorite), (imported.style_id, imported)])
-        page._quick_view = "my"
-        page._folder_id = "imports"
-        self.assertEqual([item.style_id for item in page._filtered_items()], [imported.style_id])
-        page._folder_id = "favorites"
-        self.assertEqual([item.style_id for item in page._filtered_items()], [favorite.style_id])
-
-    def test_single_style_export_emits_the_previewed_id_and_contents(self) -> None:
-        page = self.make_page()
-        page._selected_style_id = "dot_micro"
-        with tempfile.TemporaryDirectory() as tmp:
-            target = Path(tmp) / "dot_micro.xhair"
-            spy = QSignalSpy(page.export_pack_requested)
-            page.export_pack_requested.connect(lambda style_id, path: save_xhair(self.definitions[style_id], Path(path)))
-            with patch("crosshair_overlay.ui.pages.crosshairs_page.QFileDialog.getSaveFileName", return_value=(str(target), "")):
-                page._on_export_clicked()
-            self.assertEqual(spy.count(), 1)
-            self.assertEqual(spy.at(0), ["dot_micro", str(target)])
-            self.assertEqual(json.loads(target.read_text(encoding="utf-8"))["style"]["style_id"], "dot_micro")
-
-    def test_preview_cache_key_changes_when_style_content_changes(self) -> None:
-        original = self.definitions["classic_cross"]
-        card = CrosshairCardButton(original)
-        card._preview_pixmap(80, 60)
-        updated_style = OverlayStyle(**{**original.style.__dict__, "color_rgba": (255, 0, 0, 255)})
-        card.sync_definition(original.with_style(updated_style))
-        card._preview_pixmap(80, 60)
-        self.assertEqual(len(CrosshairCardButton._preview_cache), 2)
-
-    def test_sidebar_chevron_responds_to_space(self) -> None:
-        button = ChevronButton()
-        button.show()
-        button.setFocus()
-        spy = QSignalSpy(button.toggled_requested)
-        QTest.keyClick(button, Qt.Key.Key_Space)
-        self.assertEqual(spy.count(), 1)
-
-    def test_invalid_accent_does_not_emit_or_replace_last_valid_value(self) -> None:
-        settings = SettingsPage("dark", "#67D4AE", 100, "C:/tmp", False)
-        spy = QSignalSpy(settings.accent_color_changed)
-        settings._accent_input.setText("not-a-color")
-        settings._on_accent_text_changed()
-        self.assertEqual(spy.count(), 0)
-        self.assertEqual(settings._last_valid_accent, "#67D4AE")
-        self.assertFalse(settings._accent_error.isHidden())
 
     def test_bright_accent_gets_dark_button_text(self) -> None:
         manager = ThemeManager(self.app)
@@ -129,6 +68,82 @@ class UiRegressionTests(unittest.TestCase):
         router = BridgeCommandRouter(Window())
         with self.assertRaises(ValueError):
             router.dispatch("queryCatalog", {"query": "", "filter": "all", "page": 0, "pageSize": 100_000})
+
+    def test_navigation_has_no_classic_surface_fallback(self) -> None:
+        class Window:
+            _web_page = "home"
+            _current_page_id = "home"
+
+        window = Window()
+        router = BridgeCommandRouter(window)
+        router.dispatch("navigate", {"page": "zoom"})
+        self.assertEqual(window._current_page_id, "zoom")
+        with self.assertRaises(ValueError):
+            router.dispatch("toggleNative", {})
+
+    def test_fullscreen_detection_ignores_one_tick_flaps(self) -> None:
+        controller = AppController.__new__(AppController)
+        controller._last_fullscreen_state = False
+        controller._fullscreen_true_samples = 0
+        controller._fullscreen_false_samples = 0
+        self.assertFalse(controller._debounce_fullscreen_state(True))
+        self.assertTrue(controller._debounce_fullscreen_state(True))
+        self.assertTrue(controller._debounce_fullscreen_state(False))
+        self.assertTrue(controller._debounce_fullscreen_state(True))
+        self.assertTrue(controller._debounce_fullscreen_state(False))
+        self.assertTrue(controller._debounce_fullscreen_state(False))
+        self.assertFalse(controller._debounce_fullscreen_state(False))
+
+    def test_game_overlay_profile_survives_transient_process_scan_misses(self) -> None:
+        class ControllerHarness:
+            _stable_active_game_profile = AppController._stable_active_game_profile
+
+            def __init__(self):
+                self._settings = AppSettings(auto_switch_game_profiles=True)
+                self._active_game_profile_id = "game-a"
+                self._active_game_profile_misses = 0
+                self._definitions = {"dot_micro": object()}
+                self.profile = GameProfile("game-a", "Game A", "manual", style_id="dot_micro", enabled=True)
+
+            def _profile_for_game(self, game_id):
+                return self.profile if game_id == self.profile.game_id else None
+
+        controller = ControllerHarness()
+        self.assertIs(controller._stable_active_game_profile(None), controller.profile)
+        self.assertIs(controller._stable_active_game_profile(None), controller.profile)
+        self.assertIsNone(controller._stable_active_game_profile(None))
+        self.assertIs(controller._stable_active_game_profile(controller.profile), controller.profile)
+        self.assertEqual(controller._active_game_profile_misses, 0)
+
+    def test_zoom_page_without_live_zoom_does_not_capture_frames(self) -> None:
+        class WindowHarness:
+            current_page_id = "zoom"
+
+            def isVisible(self):
+                return True
+
+        class ControllerHarness:
+            _zoom_tick = AppController._zoom_tick
+
+            def __init__(self):
+                self._settings = AppSettings()
+                self._settings.beta_zoom.sidebar_enabled = True
+                self._settings.beta_zoom.zoom_enabled = True
+                self._settings.beta_zoom.live_enabled = False
+                self._main_window = WindowHarness()
+                self._zoom_hotkey = object()
+                self.hidden = False
+
+            def _hide_zoom_overlay(self):
+                self.hidden = True
+
+            def _current_zoom_source_frame(self):
+                raise AssertionError("inactive zoom must not capture the screen")
+
+        controller = ControllerHarness()
+        with patch("crosshair_overlay.app.is_hotkey_pressed", return_value=False):
+            controller._zoom_tick()
+        self.assertTrue(controller.hidden)
 
     def test_new_creator_save_avoids_builtin_ids_and_existing_creator_is_updated(self) -> None:
         class ControllerHarness:
