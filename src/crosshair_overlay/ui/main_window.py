@@ -110,7 +110,25 @@ class MainWindow(QWidget):
         self._monitor_offsets: dict[str, dict[str, int]] = {}
         self._library_collections: list[dict] = []
         self._library_tags: dict[str, list[str]] = {}
-        self._zoom_diagnostics: dict[str, object] = {}
+        # Keep the initial native snapshot complete. Zoom and Compatibility
+        # format these values before the first live frame is processed.
+        self._zoom_diagnostics: dict[str, object] = {
+            "backend": "",
+            "model": "",
+            "mode": "balanced",
+            "captureWidth": 0,
+            "captureHeight": 0,
+            "processingMs": 0.0,
+            "frameAgeP50Ms": 0.0,
+            "frameAgeP95Ms": 0.0,
+            "outputFps": 0.0,
+            "droppedFrames": 0,
+            "frames": 0,
+            "effectiveZoomMax": 1600,
+            "cleanup": "disabled",
+            "cleanupConfidence": 0.0,
+            "adaptation": "Automatic adaptation is off; the selected mode is locked.",
+        }
         self._beta_visible = beta_features_enabled
         self._sidebar_collapsed = bool(sidebar_collapsed)
         self._fullscreen_auto = False

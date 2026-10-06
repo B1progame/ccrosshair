@@ -9,6 +9,44 @@ from pathlib import Path
 
 
 class ReactSchemeTests(unittest.TestCase):
+    def test_zoom_page_survives_an_empty_startup_diagnostics_snapshot(self) -> None:
+        script = r"""
+import json, sys
+from collections import OrderedDict
+from PySide6.QtWidgets import QApplication
+from crosshair_overlay.app_settings import AccessibilitySettings, BetaZoomSettings, ReactiveSettings
+from crosshair_overlay.crosshairs.catalog import build_builtin_catalog
+from crosshair_overlay.ui.main_window import MainWindow
+from crosshair_overlay.ui.react_surface import register_react_scheme
+register_react_scheme()
+app = QApplication(sys.argv)
+definition = build_builtin_catalog()["classic_cross"]
+window = MainWindow(OrderedDict([(definition.style_id, definition)]), definition.style_id,
+                    100, "dark", "#67D4AE", 100, "", False, False, False,
+                    BetaZoomSettings(), False, AccessibilitySettings(), ReactiveSettings(), [], [])
+snapshot = window._web_snapshot()
+print(json.dumps(snapshot["settings"]["zoomDiagnostics"]), flush=True)
+app.quit()
+"""
+        environment = os.environ.copy()
+        environment["PYTHONPATH"] = str(Path("src").resolve())
+        environment["QT_QPA_PLATFORM"] = "offscreen"
+        environment["QTWEBENGINE_DISABLE_SANDBOX"] = "1"
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            env=environment,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        state = json.loads(result.stdout.splitlines()[-1])
+        if isinstance(state, str):
+            state = json.loads(state)
+        self.assertEqual(state["outputFps"], 0.0)
+        self.assertEqual(state["frameAgeP95Ms"], 0.0)
+        self.assertEqual(state["captureWidth"], 0)
+
     def test_zoom_ai_controls_are_visible_when_beta_preference_is_off(self) -> None:
         script = r"""
 import json, sys

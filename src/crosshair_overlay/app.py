@@ -128,7 +128,7 @@ class _DownloadUpdateWorker(QRunnable):
                 self.release,
                 progress_callback=report_progress,
             )
-            self.update_manager.schedule_silent_update(installer)
+            self.update_manager.schedule_update_install(installer)
             result: object = installer
         except Exception as exc:
             result = exc
@@ -1221,8 +1221,8 @@ class AppController(QObject):
                 f"Current version: {APP_VERSION}\n"
                 f"Latest version: {release.version}\n"
                 f"Published: {published}\n\n"
-                "The installer will be downloaded, this app will close, the update will install silently, "
-                "and then the app will relaunch automatically.\n\n"
+                "The installer will be downloaded with a progress indicator. This app will close, "
+                "the installer will show its install progress, and the app will relaunch when it finishes.\n\n"
                 "Continue?"
             ),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
@@ -1259,7 +1259,7 @@ class AppController(QObject):
         QMessageBox.information(
             self._main_window,
             "Installing Update",
-            "The update was downloaded. Crosshair Overlay will now close, install the new version, and relaunch.",
+            "The update downloaded successfully. Crosshair Overlay will close while the installer shows its progress, then relaunch when installation finishes.",
         )
         self.quit_application()
 

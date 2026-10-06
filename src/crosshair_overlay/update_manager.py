@@ -163,19 +163,22 @@ class UpdateManager:
             raise UpdateError("Could not finalize the downloaded installer.") from exc
         return destination
 
-    def schedule_silent_update(self, installer_path: Path) -> None:
+    def schedule_update_install(self, installer_path: Path) -> None:
         install_dir = self.install_directory()
         current_executable = self.current_executable()
         if install_dir is None or current_executable is None:
             raise UpdateError("Automatic installer updates only work from an installed app build.")
 
-        script_path = Path(tempfile.gettempdir()) / "CrosshairOverlayUpdater" / "run_update.cmd"
+        updater_dir = Path(tempfile.gettempdir()) / "CrosshairOverlayUpdater"
+        script_path = updater_dir / "run_update.cmd"
         script_path.parent.mkdir(parents=True, exist_ok=True)
         script = self._update_script(
             current_pid=os.getpid(),
             installer_path=installer_path.resolve(),
             install_dir=install_dir.resolve(),
             current_executable=current_executable.resolve(),
+            log_path=(updater_dir / "update.log").resolve(),
+            setup_log_path=(updater_dir / "setup.log").resolve(),
         )
         script_path.write_text(script, encoding="utf-8")
         subprocess.Popen(["cmd.exe", "/c", str(script_path)], creationflags=subprocess.CREATE_NO_WINDOW)
@@ -208,10 +211,20 @@ class UpdateManager:
             return (0,)
         return tuple(int(item) for item in matches)
 
-    def _update_script(self, current_pid: int, installer_path: Path, install_dir: Path, current_executable: Path) -> str:
+    def _update_script(
+        self,
+        current_pid: int,
+        installer_path: Path,
+        install_dir: Path,
+        current_executable: Path,
+        log_path: Path | None = None,
+        setup_log_path: Path | None = None,
+    ) -> str:
         installer_arg = self._escape_cmd_argument(installer_path)
         install_dir_arg = self._escape_cmd_argument(install_dir)
         current_executable_arg = self._escape_cmd_argument(current_executable)
+        log_arg = self._escape_cmd_argument(log_path or installer_path.with_name("update.log"))
+        setup_log_arg = self._escape_cmd_argument(setup_log_path or installer_path.with_name("setup.log"))
         return "\n".join(
             [
                 "@echo off",
@@ -220,13 +233,24 @@ class UpdateManager:
                 f"set \"INSTALLER={installer_arg}\"",
                 f"set \"INSTALL_DIR={install_dir_arg}\"",
                 f"set \"APP_EXE={current_executable_arg}\"",
+                f"set \"UPDATE_LOG={log_arg}\"",
+                f"set \"SETUP_LOG={setup_log_arg}\"",
+                "echo Waiting for Crosshair Overlay to close... > \"%UPDATE_LOG%\"",
                 ":wait_for_app",
                 "tasklist /FI \"PID eq %TARGET_PID%\" | find \"%TARGET_PID%\" >nul",
                 "if not errorlevel 1 (",
                 "    timeout /t 1 /nobreak >nul",
                 "    goto wait_for_app",
                 ")",
-                "start \"\" /wait \"%INSTALLER%\" /SP- /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CURRENTUSER /CLOSEAPPLICATIONS /FORCECLOSEAPPLICATIONS /DIR=\"%INSTALL_DIR%\"",
+                "echo Starting installer with visible progress... >> \"%UPDATE_LOG%\"",
+                "start \"\" /wait \"%INSTALLER%\" /SP- /SILENT /NORESTART /CURRENTUSER /CLOSEAPPLICATIONS /FORCECLOSEAPPLICATIONS /DIR=\"%INSTALL_DIR%\" /LOG=\"%SETUP_LOG%\"",
+                "set \"INSTALLER_EXIT=%ERRORLEVEL%\"",
+                "if not \"%INSTALLER_EXIT%\"==\"0\" (",
+                "    echo Installer failed with exit code %INSTALLER_EXIT%. See \"%SETUP_LOG%\". >> \"%UPDATE_LOG%\"",
+                "    if exist \"%APP_EXE%\" start \"\" \"%APP_EXE%\"",
+                "    exit /b %INSTALLER_EXIT%",
+                ")",
+                "echo Installer completed successfully. Relaunching app... >> \"%UPDATE_LOG%\"",
                 "if exist \"%APP_EXE%\" start \"\" \"%APP_EXE%\"",
                 "del \"%INSTALLER%\" >nul 2>nul",
                 "del \"%~f0\" >nul 2>nul",

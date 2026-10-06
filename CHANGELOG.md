@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.5.2 - 2026-10-06
+
+- Fixed the Zoom and Compatibility pages crashing to a blank screen before any live diagnostics exist; missing diagnostics now use safe defaults.
+- Made the updater show Inno Setup's install progress bar after the download, record update/setup logs, and relaunch the existing app if installation fails.
+
 ## 1.5.1 - 2026-10-05
 
 - Fixed the blank control window by queuing the first Qt WebEngine load until after the native window is shown, avoiding a Windows WebEngine crash during the window's show event.

@@ -129,6 +129,17 @@ export class Bridge {
   private acceptSnapshot(snapshot:Snapshot){
     if(!snapshot||snapshot.version!==1||!Number.isSafeInteger(snapshot.revision))return;
     if(this.snapshot&&snapshot.revision<this.snapshot.revision)return;
+    // Native startup snapshots may not yet contain live Zoom metrics.
+    // Normalize at the bridge boundary so the Zoom page can safely format
+    // values such as outputFps with toFixed().
+    const diagnostics=snapshot.settings?.zoomDiagnostics;
+    const completeDiagnostics:SettingsSnapshot['zoomDiagnostics']=Object.assign({
+      backend:'',model:'',mode:'balanced',captureWidth:0,captureHeight:0,processingMs:0,
+      frameAgeP50Ms:0,frameAgeP95Ms:0,outputFps:0,droppedFrames:0,frames:0,
+      effectiveZoomMax:1600,cleanup:'disabled',cleanupConfidence:0,
+      adaptation:'Automatic adaptation is off; the selected mode is locked.',
+    },diagnostics);
+    snapshot={...snapshot,settings:{...snapshot.settings,zoomDiagnostics:completeDiagnostics}};
     this.snapshot=snapshot;
     this.listeners.forEach(listener=>listener(snapshot));
   }
