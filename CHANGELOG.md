@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.5.3 - 2026-10-06
+
+- Redesigned the Games page with clearer runtime status, profile counts, grouped automation and shortcuts, and focused per-game cards with expandable loadout tuning.
+- Verified Quality mode performs local ONNX 3× super-resolution inference; on the release host DirectML produced a 672×672 result in 27.5 ms for the test frame. CPU fallback is available where DirectML is unavailable.
+
 ## 1.5.2 - 2026-10-06
 
 - Fixed the Zoom and Compatibility pages crashing to a blank screen before any live diagnostics exist; missing diagnostics now use safe defaults.
